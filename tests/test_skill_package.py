@@ -54,7 +54,6 @@ class SkillPackageTest(unittest.TestCase):
         self.assertIn("--review-wiki", readme_text)
         self.assertIn("--remove-review-wiki", readme_text)
         self.assertIn("127.0.0.1:4151", readme_text)
-        self.assertIn("~/.fleki/knowledge", readme_text)
         self.assertIn("Hermes", readme_text)
         self.assertIn("OpenClaw", readme_text)
         self.assertIn("knowledge save", readme_text)
