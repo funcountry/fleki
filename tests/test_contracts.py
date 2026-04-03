@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
-from common import make_temp_repo
+from common import make_temp_repo, sample_save_decision
 from knowledge_graph.ids import make_opaque_id
 from knowledge_graph.validation import ValidationError, validate_save_decision
 
@@ -97,6 +96,28 @@ class ContractsTest(unittest.TestCase):
                 fallback_policy="forbidden",
             )
 
+    def test_caller_owned_render_metadata_is_rejected(self) -> None:
+        temp_dir, root, _ = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+        source_path = root / "note.md"
+        source_path.write_text("hello")
+
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["provenance_notes"][0]["render_manifest_paths"] = {
+            "note.1": "sources/pdf/note.render.manifest.json"
+        }
+
+        with self.assertRaises(ValidationError):
+            validate_save_decision(
+                decision,
+                source_bindings={"note.1": object()},
+                fallback_policy="forbidden",
+            )
+
     def test_source_family_topic_path_is_rejected(self) -> None:
         decision = {
             "ingest_summary": {
@@ -160,6 +181,36 @@ class ContractsTest(unittest.TestCase):
                 "why": "none",
             },
         }
+        with self.assertRaises(ValidationError):
+            validate_save_decision(
+                decision,
+                source_bindings={"note.1": object()},
+                fallback_policy="forbidden",
+            )
+
+    def test_invalid_temporal_scope_is_rejected(self) -> None:
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["temporal_scope"] = "fresh"
+
+        with self.assertRaises(ValidationError):
+            validate_save_decision(
+                decision,
+                source_bindings={"note.1": object()},
+                fallback_policy="forbidden",
+            )
+
+    def test_save_rejects_stale_lifecycle_state(self) -> None:
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["topic_actions"][0]["lifecycle_state"] = "stale"
+
         with self.assertRaises(ValidationError):
             validate_save_decision(
                 decision,

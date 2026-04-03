@@ -5,39 +5,84 @@ from pathlib import Path
 
 
 class SkillPackageTest(unittest.TestCase):
-    def test_knowledge_skill_package_exists(self) -> None:
+    def test_knowledge_skill_package_exists_in_one_canonical_repo_path(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        skill_path = root / "skills_or_tools" / "knowledge" / "SKILL.md"
-        self.assertTrue(skill_path.exists())
-        text = skill_path.read_text()
-        self.assertIn("knowledge save", text)
-        self.assertIn("knowledge search", text)
-        self.assertIn("knowledge trace", text)
-        self.assertIn("knowledge rebuild", text)
-        self.assertIn("knowledge status", text)
+        skill_root = root / "skills" / "knowledge"
+        runtime_root = skill_root / "runtime"
+        repo_readme = root / "README.md"
+        repo_install_script = root / "install.sh"
+        runtime_sync_script = root / "scripts" / "sync_knowledge_runtime.py"
+        repo_installer_script = root / "scripts" / "install_knowledge_skill.py"
+
+        self.assertTrue(skill_root.exists(), msg=str(skill_root))
+        self.assertTrue((skill_root / "SKILL.md").exists())
+        self.assertFalse((root / "skills_or_tools" / "knowledge").exists())
+        self.assertFalse((root / ".agents" / "skills" / "knowledge").exists())
+
+        skill_text = (skill_root / "SKILL.md").read_text()
+        self.assertIn("key: fleki/knowledge", skill_text)
+        self.assertIn("knowledge save", skill_text)
+        self.assertIn("knowledge search", skill_text)
+        self.assertIn("knowledge trace", skill_text)
+        self.assertIn("knowledge rebuild", skill_text)
+        self.assertIn("knowledge status", skill_text)
 
         references = [
-            root / "skills_or_tools" / "knowledge" / "references" / "save-ingestion.md",
-            root / "skills_or_tools" / "knowledge" / "references" / "search-and-trace.md",
-            root / "skills_or_tools" / "knowledge" / "references" / "storage-and-authority.md",
-            root / "skills_or_tools" / "knowledge" / "references" / "examples-and-validation.md",
+            skill_root / "references" / "save-ingestion.md",
+            skill_root / "references" / "search-and-trace.md",
+            skill_root / "references" / "storage-and-authority.md",
+            skill_root / "references" / "examples-and-validation.md",
+            skill_root / "install" / "README.md",
+            skill_root / "install" / "bootstrap.sh",
         ]
         for reference in references:
             self.assertTrue(reference.exists(), msg=str(reference))
 
-        workspace_publication = root / ".agents" / "skills" / "knowledge"
-        self.assertTrue(workspace_publication.exists(), msg=str(workspace_publication))
-        self.assertTrue((workspace_publication / "SKILL.md").exists())
-        for reference_name in [
-            "save-ingestion.md",
-            "search-and-trace.md",
-            "storage-and-authority.md",
-            "examples-and-validation.md",
-        ]:
-            self.assertTrue(
-                (workspace_publication / "references" / reference_name).exists(),
-                msg=reference_name,
-            )
+        self.assertTrue(repo_readme.exists(), msg=str(repo_readme))
+        self.assertTrue(repo_install_script.exists(), msg=str(repo_install_script))
+        self.assertTrue(runtime_sync_script.exists(), msg=str(runtime_sync_script))
+        self.assertTrue(repo_installer_script.exists(), msg=str(repo_installer_script))
+
+        readme_text = repo_readme.read_text()
+        self.assertIn("./install.sh", readme_text)
+        self.assertIn("--dry-run", readme_text)
+        self.assertIn("~/.fleki/knowledge", readme_text)
+        self.assertIn("Hermes", readme_text)
+        self.assertIn("OpenClaw", readme_text)
+        self.assertIn("Manual PDF Smoke", readme_text)
+
+        install_script_text = repo_install_script.read_text()
+        self.assertIn("scripts/install_knowledge_skill.py", install_script_text)
+        self.assertNotIn("export_knowledge_skill_bundle.py", install_script_text)
+        self.assertNotIn("--external-root", install_script_text)
+
+        generated_runtime_files = [
+            "runtime/README.md",
+            "runtime/pyproject.toml",
+            "runtime/src/knowledge_graph/__init__.py",
+            "runtime/src/knowledge_graph/cli.py",
+            "runtime/src/knowledge_graph/pdf_render.py",
+            "runtime/src/knowledge_graph/repository.py",
+            "runtime/src/knowledge_graph/install_targets.py",
+        ]
+        for relative_name in generated_runtime_files:
+            self.assertTrue((skill_root / relative_name).exists(), msg=relative_name)
+
+        runtime_pyproject = (runtime_root / "pyproject.toml").read_text()
+        self.assertIn('knowledge = "knowledge_graph.cli:main"', runtime_pyproject)
+        self.assertIn('"docling>=2.69,<3"', runtime_pyproject)
+
+        runtime_readme = (runtime_root / "README.md").read_text()
+        self.assertIn("Minimal valid save example", runtime_readme)
+        self.assertIn("Create `bindings.json`", runtime_readme)
+        self.assertIn("Create `decision.json`", runtime_readme)
+        self.assertIn("knowledge save --bindings bindings.json --decision decision.json", runtime_readme)
+
+        bootstrap_text = (skill_root / "install" / "bootstrap.sh").read_text()
+        self.assertIn("uv tool install --force --python 3.12", bootstrap_text)
+        self.assertIn("migrate_legacy_install", bootstrap_text)
+        self.assertIn("build_install_manifest", bootstrap_text)
+        self.assertNotIn("npx skills add", bootstrap_text)
 
 
 if __name__ == "__main__":

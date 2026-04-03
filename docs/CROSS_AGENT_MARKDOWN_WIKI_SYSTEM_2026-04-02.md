@@ -15,6 +15,8 @@ related:
   - /Users/agents/workspace/paperclip_agents/vendor/paperclip/packages/adapters/codex-local/src/index.ts
 ---
 
+> Supersession note (2026-04-03): This doc remains the architecture basis for the shared knowledge model, provenance rules, and semantic graph behavior. Install/root ownership and downstream runtime adoption are now governed by [CENTRALIZED_KNOWLEDGE_INSTALL_AND_ROOT_PLAN_2026-04-03.md](/Users/agents/workspace/fleki/docs/CENTRALIZED_KNOWLEDGE_INSTALL_AND_ROOT_PLAN_2026-04-03.md).
+
 # TL;DR
 
 - **Outcome:** Build one runtime-neutral semantic markdown knowledge graph on disk, where the primary thing we organize is company knowledge, not source artifacts. Raw Codex sessions, Hermes materials, Paperclip materials, PDFs, images, and docs are preserved as evidence behind semantic knowledge pages with explicit provenance notes.

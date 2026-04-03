@@ -14,6 +14,8 @@
 
 - semantic path, not source-family path
 - evidence on every knowledge unit
+- valid `temporal_scope` only: `evergreen`, `time_bound`, `ephemeral`
+- valid save-time `lifecycle_state` only: `current`, `historical`
 - provenance coverage for every source
 - honest reading limits
 - exact helper approval or no helper use

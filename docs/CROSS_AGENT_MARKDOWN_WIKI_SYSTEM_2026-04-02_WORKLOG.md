@@ -2,6 +2,10 @@
 
 Plan doc: /Users/agents/workspace/fleki/docs/CROSS_AGENT_MARKDOWN_WIKI_SYSTEM_2026-04-02.md
 
+## Supersession note
+- Install/root ownership and downstream runtime adoption are now governed by `/Users/agents/workspace/fleki/docs/CENTRALIZED_KNOWLEDGE_INSTALL_AND_ROOT_PLAN_2026-04-03.md`.
+- This worklog remains historical execution evidence for the original repo-local proof and runtime packaging phase, not the current install/root architecture.
+
 ## Initial entry
 - Run started.
 - Current phase: Phase 1 - Core contracts, on-disk layout, and shared skill package

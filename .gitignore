@@ -3,6 +3,8 @@
 # Python caches and virtual environments
 __pycache__/
 *.py[cod]
+*.egg-info/
+skills/knowledge/runtime/build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -11,7 +13,5 @@ htmlcov/
 .venv/
 venv/
 
-# Keep committed workspace skill publications, ignore other local agent state.
-.agents/*
-!.agents/skills/
-!.agents/skills/**
+# Local agent state
+.agents/

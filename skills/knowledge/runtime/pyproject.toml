@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fleki-knowledge-graph"
+version = "0.1.0"
+description = "Shared semantic knowledge graph runtime for Fleki"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["docling>=2.69,<3"]
+
+[project.scripts]
+knowledge = "knowledge_graph.cli:main"
+
+[project.optional-dependencies]
+comparison = ["pymupdf4llm>=0.0.27,<1"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,5 +1,6 @@
 ---
 name: knowledge
+key: fleki/knowledge
 description: "Use the shared semantic markdown knowledge graph to save new source material, search what the company knows, trace claims back to provenance, rebuild affected topics, or inspect graph status. Use when work depends on durable company knowledge or must add new evidence; not for generic repo search, one-off summarization, or direct manual filing."
 metadata:
   short-description: "Use the shared semantic knowledge graph"
@@ -46,6 +47,9 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Cite concrete paths, ids, or provenance notes in answers that depend on graph content.
 - If support is weak or conflicting, say so explicitly instead of smoothing it over.
 - Handle sensitive material by preserving pointer-level provenance and redacting secrets or prompt-bearing values.
+- Copied PDFs now persist a source-adjacent render bundle (`.render.md`, `.render.manifest.json`, optional `.assets/`) before semantic filing; pointer-only or `secret_pointer_only` PDFs must surface an explicit render omission instead.
+- `knowledge save` may mark a page `current` or `historical`; `knowledge rebuild` owns `stale` and delete.
+- Agents should retire fully superseded or clearly stale knowledge through `knowledge rebuild`, not by hand-editing the graph.
 - If the shared interface is unavailable, say that clearly and do not pretend an ingest, rebuild, or graph-backed search succeeded when it did not.
 
 ## First move
@@ -63,6 +67,7 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Treat inputs as source material, not as filing destinations.
 - Inspect the local source files directly before making semantic decisions.
 - Preserve the source first and record honest reading limits before filing knowledge.
+- For copied PDFs, treat the structured render bundle as repository-owned evidence that must exist before provenance and topic writes succeed; do not invent or hand-author render metadata in the semantic decision payload.
 - Extract durable knowledge units and map them to the smallest correct semantic topic set.
 - Preserve source records and provenance notes for every material change. If multiple sources are ingested together, preserve per-source reading/provenance detail or an explicit bundle rationale.
 - Apply bounded synchronous changes to the smallest affected page sections and queue wider reorganization for `rebuild` when needed.
@@ -74,11 +79,13 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Prefer existing knowledge pages and indexes over raw source artifacts.
 - Read semantic pages directly and inspect provenance or raw sources only when needed.
 - Apply authority as a ranking rule, not a decorative note.
+- Freshness sharpens ranking, but it does not override stronger authority by itself.
 - Do not return raw `sources/**` as ordinary search hits.
 
 ### `knowledge trace`
 
 - Walk from the claim or locator to the relevant knowledge page, then to provenance notes, then to source records.
+- For PDF-backed claims, continue the chain to the render manifest and stored render markdown or the explicit omission reason; `trace` is the canonical inspection surface for PDF fidelity state.
 - Distinguish live doctrine, supported practice, historical support, and tentative inference.
 - Surface conflicts, missing evidence, or authority collisions instead of choosing silently.
 
@@ -92,6 +99,21 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 
 - Report the specific subsystem or topic area under discussion, not a vague global reassurance.
 - Highlight the most decision-relevant next action when status reveals drift or backlog.
+- Treat `recent_topics` and `recent_source_ingests` as the primary recentness view once they are available; receipts and indexes are supporting evidence.
+
+## Install And Repair
+
+- The human-edited skill package lives under `skills/knowledge/**`.
+- From a Fleki repo checkout, install or update with one command:
+  - `./install.sh`
+- That installer:
+  - installs the bundled `knowledge` CLI with PDF support through `docling`
+  - installs Codex through the upstream `npx skills add` flow
+  - copies the skill into every detected Hermes home and OpenClaw root on the machine
+  - refreshes the machine install manifest and centralized `~/.fleki` knowledge-home layout
+- From an already installed or copied bundle, repair the CLI and manifest with:
+  - `bash install/bootstrap.sh`
+- After install or repair, `knowledge status --json --no-receipt` should report the centralized `resolved_data_root` and the live `install_manifest_path`.
 
 ## Reference map
 
@@ -99,3 +121,4 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - `references/search-and-trace.md`
 - `references/storage-and-authority.md`
 - `references/examples-and-validation.md`
+- `install/README.md`

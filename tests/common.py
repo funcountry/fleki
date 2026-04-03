@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from shutil import copy2
 from tempfile import TemporaryDirectory
 from typing import Tuple
 
@@ -10,15 +11,51 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from knowledge_graph import KnowledgeRepository, SourceBinding  # noqa: E402
+from knowledge_graph import (  # noqa: E402
+    KnowledgeRepository,
+    SourceBinding,
+    build_install_manifest,
+    resolve_knowledge_layout,
+    write_install_manifest,
+)
 
 
 def make_temp_repo() -> Tuple[TemporaryDirectory, Path, KnowledgeRepository]:
     tmp = TemporaryDirectory()
     root = Path(tmp.name)
-    repo = KnowledgeRepository(root)
+    layout = resolve_knowledge_layout(
+        data_root=root / "data-root",
+        config_root=root / "config-root",
+        state_root=root / "state-root",
+        install_manifest_path=root / "config-root" / "install.json",
+        repo_root=root,
+    )
+    manifest = build_install_manifest(
+        layout,
+        canonical_skill_path=ROOT / "skills" / "knowledge",
+        codex_managed_skill_path=Path.home() / ".agents" / "skills" / "knowledge",
+        hermes_skill_paths=(),
+        openclaw_skill_paths=(),
+        legacy_repo_root=root,
+    )
+    write_install_manifest(manifest)
+    resolved_layout = resolve_knowledge_layout(
+        install_manifest_path=layout.install_manifest_path,
+        repo_root=root,
+    )
+    repo = KnowledgeRepository(resolved_layout)
     repo.initialize_layout()
     return tmp, root, repo
+
+
+def repo_fixture_pdf_path() -> Path:
+    return ROOT / "docs" / "phase6_smoke_inputs" / "knowledge_pdf_input.pdf"
+
+
+def copy_fixture_pdf(root: Path, name: str = "knowledge-fixture.pdf") -> Path:
+    destination = root / name
+    copy2(repo_fixture_pdf_path(), destination)
+    return destination
 
 
 def sample_save_decision(*, source_ids, topic_path, candidate_title, authority_tier="mixed", recommended_scope=None):
@@ -48,11 +85,13 @@ def sample_save_decision(*, source_ids, topic_path, candidate_title, authority_t
                 "topic_path": topic_path,
                 "page_kind": "topic",
                 "action": "create",
+                "lifecycle_state": "current",
                 "candidate_title": candidate_title,
                 "why": "Durable knowledge belongs here.",
                 "knowledge_units": [
                     {
                         "kind": "principle",
+                        "temporal_scope": "evergreen",
                         "target_section": {
                             "section_id": None,
                             "heading": "Current Understanding",
