@@ -1,28 +1,19 @@
 ---
-{
-  "approved_helpers_used": [],
-  "bundle_rationale": null,
-  "created_at": "2026-04-03T04:17:56+00:00",
-  "knowledge_sections_touched": [
-    {
-      "section_heading": "Current Understanding",
-      "topic_path": "knowledge-system/multimodal-runtime-validation"
-    }
-  ],
-  "provenance_id": "prov_agovdd67cp33sbnyphfnc4nxmi",
-  "reading_gaps": {
-    "phase6.smoke.multimodal.knowledge-pdf": []
-  },
-  "source_ids": [
-    "phase6.smoke.multimodal.knowledge-pdf"
-  ],
-  "source_reading_modes": {
-    "phase6.smoke.multimodal.knowledge-pdf": "direct_local_pdf"
-  },
-  "source_record_paths": [
-    "knowledge/sources/pdf/phase6.smoke.multimodal.knowledge-pdf__knowledge_pdf_input.pdf.record.json"
-  ]
-}
+approved_helpers_used: []
+bundle_rationale: null
+created_at: '2026-04-03T04:17:56+00:00'
+knowledge_sections_touched:
+- section_heading: Current Understanding
+  topic_path: knowledge-system/multimodal-runtime-validation
+provenance_id: prov_agovdd67cp33sbnyphfnc4nxmi
+reading_gaps:
+  phase6.smoke.multimodal.knowledge-pdf: []
+source_ids:
+- phase6.smoke.multimodal.knowledge-pdf
+source_reading_modes:
+  phase6.smoke.multimodal.knowledge-pdf: direct_local_pdf
+source_record_paths:
+- sources/pdf/phase6.smoke.multimodal.knowledge-pdf__knowledge_pdf_input.pdf.record.json
 ---
 # Provenance for multimodal smoke PDF
 

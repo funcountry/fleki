@@ -35,7 +35,8 @@ Install from this checkout with:
 Requirements:
 
 - `uv`
-- `npx` if you want the Codex skill installed on this machine
+- `npx` if Codex is installed on the machine
+- Node `>=22` and npm `>=10.9.2` if you want the optional review wiki
 
 Useful install variants:
 
@@ -54,7 +55,30 @@ What `./install.sh` does:
 - copies the skill into each detected OpenClaw root
 - writes or refreshes the install manifest under `$HOME/.fleki`
 
-Verify the install:
+Install the optional local review wiki on this machine:
+
+```bash
+./install.sh --review-wiki
+```
+
+That installs the normal Fleki runtime pieces, then installs a per-user review
+wiki service on macOS or Linux. The site serves locally at:
+
+```text
+http://127.0.0.1:4151
+```
+
+The review wiki exports only `topics/**`, `topics/indexes/**`, and
+`provenance/**` into derived state under `~/.fleki/state/review-wiki`. It does
+not publish `sources/**`, `receipts/**`, or raw record JSON.
+
+Remove the review wiki later with:
+
+```bash
+./install.sh --remove-review-wiki
+```
+
+Quick smoke after install:
 
 ```bash
 knowledge status --json --no-receipt

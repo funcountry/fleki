@@ -20,7 +20,13 @@ from knowledge_graph import (
     resolve_knowledge_layout,
     write_install_manifest,
 )
-from knowledge_graph.frontmatter import dump_frontmatter
+from knowledge_graph.frontmatter import dump_frontmatter, split_frontmatter
+
+
+def render_legacy_json_frontmatter(metadata, body: str) -> str:
+    import json
+
+    return "---\n" + json.dumps(metadata, indent=2, sort_keys=True) + "\n---\n" + body.lstrip()
 
 
 class LayoutContractTest(unittest.TestCase):
@@ -103,7 +109,7 @@ class LayoutContractTest(unittest.TestCase):
         legacy_topic = root / "knowledge" / "topics" / "doctrine" / "shared-agent-learnings.md"
         legacy_topic.parent.mkdir(parents=True, exist_ok=True)
         legacy_topic.write_text(
-            dump_frontmatter(
+            render_legacy_json_frontmatter(
                 {"current_path": "doctrine/shared-agent-learnings"},
                 "# Legacy Topic\n\n## Provenance Notes\n- `knowledge/provenance/other/prov_legacy.md`\n",
             )
@@ -112,7 +118,7 @@ class LayoutContractTest(unittest.TestCase):
         legacy_provenance = root / "knowledge" / "provenance" / "other" / "prov_legacy.md"
         legacy_provenance.parent.mkdir(parents=True, exist_ok=True)
         legacy_provenance.write_text(
-            dump_frontmatter(
+            render_legacy_json_frontmatter(
                 {
                     "provenance_id": "prov_legacy",
                     "source_record_paths": [
@@ -146,9 +152,43 @@ class LayoutContractTest(unittest.TestCase):
         self.assertIn("`provenance/other/prov_legacy.md`", topic_text)
         self.assertNotIn("`knowledge/provenance/other/prov_legacy.md`", topic_text)
         provenance_text = (layout.data_root / "provenance" / "other" / "prov_legacy.md").read_text()
-        self.assertIn('"source_record_paths": [\n    "sources/other/legacy.record.json"\n  ]', provenance_text)
+        provenance_metadata, _ = split_frontmatter(provenance_text)
+        self.assertEqual(
+            provenance_metadata["source_record_paths"],
+            ["sources/other/legacy.record.json"],
+        )
         source_record_text = (layout.data_root / "sources" / "other" / "legacy.record.json").read_text()
         self.assertIn('"relative_path": "sources/other/legacy.md"', source_record_text)
+
+    def test_normal_repository_reads_do_not_auto_port_legacy_json_frontmatter(self) -> None:
+        temp_dir = TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        layout = resolve_knowledge_layout(
+            data_root=root / "data-root",
+            config_root=root / "config-root",
+            state_root=root / "state-root",
+            install_manifest_path=root / "config-root" / "install.json",
+            repo_root=root,
+        )
+        repo = KnowledgeRepository(layout)
+        repo.initialize_layout()
+        legacy_topic = repo.topics_root / "product" / "legacy.md"
+        legacy_topic.parent.mkdir(parents=True, exist_ok=True)
+        legacy_text = render_legacy_json_frontmatter(
+            {
+                "knowledge_id": "kg_legacy",
+                "current_path": "product/legacy",
+                "page_kind": "topic",
+            },
+            "# Legacy Topic\n",
+        )
+        legacy_topic.write_text(legacy_text)
+
+        with self.assertRaisesRegex(ValueError, "legacy JSON frontmatter is not supported"):
+            repo.search("Legacy", write_receipt=False)
+
+        self.assertEqual(legacy_topic.read_text(), legacy_text)
 
     def test_migrate_legacy_install_moves_old_root_into_dot_fleki_and_deletes_source(self) -> None:
         temp_dir = TemporaryDirectory()

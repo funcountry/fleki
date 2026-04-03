@@ -2,7 +2,7 @@
   "authority_tier": "historical_support",
   "captured_at": "2026-04-03T04:17:56+00:00",
   "original_path": "/Users/agents/workspace/fleki/docs/phase6_smoke_inputs/knowledge_image_input.png",
-  "relative_path": "knowledge/sources/images/phase6.smoke.multimodal.knowledge-image__knowledge_image_input.png",
+  "relative_path": "sources/images/phase6.smoke.multimodal.knowledge-image__knowledge_image_input.png",
   "sensitivity": "internal",
   "sha256": "c6c19f3a58bfeb546111866f45fb98768949136549cd295ada1d06b0e8e452c5",
   "source_id": "phase6.smoke.multimodal.knowledge-image",

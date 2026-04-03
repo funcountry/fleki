@@ -51,6 +51,10 @@ class SkillPackageTest(unittest.TestCase):
         self.assertIn("./install.sh", readme_text)
         self.assertIn("--dry-run", readme_text)
         self.assertIn("$HOME/.fleki/knowledge", readme_text)
+        self.assertIn("--review-wiki", readme_text)
+        self.assertIn("--remove-review-wiki", readme_text)
+        self.assertIn("127.0.0.1:4151", readme_text)
+        self.assertIn("~/.fleki/knowledge", readme_text)
         self.assertIn("Hermes", readme_text)
         self.assertIn("OpenClaw", readme_text)
         self.assertIn("knowledge save", readme_text)
@@ -72,10 +76,13 @@ class SkillPackageTest(unittest.TestCase):
         ]
         for relative_name in generated_runtime_files:
             self.assertTrue((skill_root / relative_name).exists(), msg=relative_name)
+        self.assertFalse((runtime_root / "src" / "knowledge_graph" / "review_wiki").exists())
+        self.assertFalse((runtime_root / "templates" / "review-wiki").exists())
 
         runtime_pyproject = (runtime_root / "pyproject.toml").read_text()
         self.assertIn('knowledge = "knowledge_graph.cli:main"', runtime_pyproject)
         self.assertIn('"docling>=2.69,<3"', runtime_pyproject)
+        self.assertIn('"PyYAML>=6,<7"', runtime_pyproject)
 
         runtime_readme = (runtime_root / "README.md").read_text()
         self.assertIn("Minimal valid save example", runtime_readme)

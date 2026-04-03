@@ -1123,10 +1123,7 @@ class KnowledgeRepository:
         for path in self.topics_root.rglob("*.md"):
             if path.name == "README.md":
                 continue
-            try:
-                metadata, body = split_frontmatter(path.read_text())
-            except Exception:
-                continue
+            metadata, body = split_frontmatter(path.read_text())
             if "knowledge_id" not in metadata:
                 continue
             title, sections = parse_sections(body)
@@ -1147,10 +1144,7 @@ class KnowledgeRepository:
         if not self.provenance_root.exists():
             return items
         for path in self.provenance_root.rglob("*.md"):
-            try:
-                metadata, body = split_frontmatter(path.read_text())
-            except Exception:
-                continue
+            metadata, body = split_frontmatter(path.read_text())
             provenance_id = metadata.get("provenance_id")
             if not provenance_id:
                 continue
@@ -1168,10 +1162,7 @@ class KnowledgeRepository:
         if not receipt_dir.exists():
             return items
         for path in receipt_dir.rglob("*.md"):
-            try:
-                metadata, body = split_frontmatter(path.read_text())
-            except Exception:
-                continue
+            metadata, body = split_frontmatter(path.read_text())
             items.append({"path": path, "metadata": metadata, "body": body})
         return items
 

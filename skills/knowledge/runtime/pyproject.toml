@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Shared semantic knowledge graph runtime for Fleki"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["docling>=2.69,<3"]
+dependencies = ["docling>=2.69,<3", "PyYAML>=6,<7"]
 
 [project.scripts]
 knowledge = "knowledge_graph.cli:main"

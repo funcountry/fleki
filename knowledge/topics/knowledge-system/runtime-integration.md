@@ -1,42 +1,29 @@
 ---
-{
-  "aliases": [],
-  "authority_posture": "supported_by_internal_session",
-  "current_path": "knowledge-system/runtime-integration",
-  "knowledge_id": "kg_agovc6m3l2uhoxhrwbup7ydkrq",
-  "last_reorganized_at": null,
-  "last_updated_at": "2026-04-03T03:53:37+00:00",
-  "page_kind": "topic",
-  "parent_topics": [],
-  "section_ids": {
-    "current_understanding": "sec_agovc6m3lyitngwagrpb56qude"
-  },
-  "section_support": {
-    "sec_agovc6m3lyitngwagrpb56qude": [
-      {
-        "locator": "Knowledge worth preserving",
-        "notes": "First bullet from the Hermes runtime publication smoke note.",
-        "provenance_id": "prov_agovc6m3lya67m3ihgq6kcqz54"
-      },
-      {
-        "locator": "Knowledge worth preserving",
-        "notes": "Second bullet from the Hermes runtime publication smoke note.",
-        "provenance_id": "prov_agovc6m3lya67m3ihgq6kcqz54"
-      },
-      {
-        "locator": "Knowledge worth preserving",
-        "notes": "Third bullet from the Hermes runtime publication smoke note.",
-        "provenance_id": "prov_agovc6m3lya67m3ihgq6kcqz54"
-      },
-      {
-        "locator": "Knowledge worth preserving",
-        "notes": "Fourth bullet from the Hermes runtime publication smoke note.",
-        "provenance_id": "prov_agovc6m3lya67m3ihgq6kcqz54"
-      }
-    ]
-  },
-  "supersedes": []
-}
+aliases: []
+authority_posture: supported_by_internal_session
+current_path: knowledge-system/runtime-integration
+knowledge_id: kg_agovc6m3l2uhoxhrwbup7ydkrq
+last_reorganized_at: null
+last_updated_at: '2026-04-03T03:53:37+00:00'
+page_kind: topic
+parent_topics: []
+section_ids:
+  current_understanding: sec_agovc6m3lyitngwagrpb56qude
+section_support:
+  sec_agovc6m3lyitngwagrpb56qude:
+  - locator: Knowledge worth preserving
+    notes: First bullet from the Hermes runtime publication smoke note.
+    provenance_id: prov_agovc6m3lya67m3ihgq6kcqz54
+  - locator: Knowledge worth preserving
+    notes: Second bullet from the Hermes runtime publication smoke note.
+    provenance_id: prov_agovc6m3lya67m3ihgq6kcqz54
+  - locator: Knowledge worth preserving
+    notes: Third bullet from the Hermes runtime publication smoke note.
+    provenance_id: prov_agovc6m3lya67m3ihgq6kcqz54
+  - locator: Knowledge worth preserving
+    notes: Fourth bullet from the Hermes runtime publication smoke note.
+    provenance_id: prov_agovc6m3lya67m3ihgq6kcqz54
+supersedes: []
 ---
 # Runtime Integration
 
@@ -50,4 +37,4 @@
 - Paperclip can discover the same knowledge skill from repo-owned skills packages without changing storage semantics.
 
 ## Provenance Notes
-- `knowledge/provenance/other/prov_agovc6m3lya67m3ihgq6kcqz54.md`
+- `provenance/other/prov_agovc6m3lya67m3ihgq6kcqz54.md`

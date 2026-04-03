@@ -6,7 +6,11 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from .frontmatter import dump_frontmatter, split_frontmatter
+from .frontmatter import (
+    dump_frontmatter,
+    split_frontmatter_for_migration,
+    uses_legacy_json_frontmatter,
+)
 from .models import KnowledgeInstallManifest, ResolvedKnowledgeLayout
 from .validation import ValidationError
 
@@ -256,6 +260,7 @@ def migrate_legacy_repo_graph(
         raise ValidationError("canonical data_root must be empty before migration")
 
     shutil.copytree(legacy_root, layout.data_root, dirs_exist_ok=True)
+    ported_files = port_graph_frontmatter(layout.data_root)
     rewritten_files = _rewrite_legacy_graph_paths(layout.data_root)
     source_count = _file_count(legacy_root)
     copied_count = _file_count(layout.data_root)
@@ -267,7 +272,7 @@ def migrate_legacy_repo_graph(
         "data_root": str(layout.data_root),
         "copied_files": copied_count,
         "verified": copied_count == source_count,
-        "rewritten_files": rewritten_files,
+        "rewritten_files": rewritten_files + ported_files,
         "switched": copied_count == source_count,
     }
 
@@ -305,6 +310,18 @@ def _file_count(root: Path) -> int:
 
 def _path_has_content(path: Path) -> bool:
     return path.exists() and any(path.iterdir())
+
+
+def port_graph_frontmatter(data_root: Path) -> int:
+    ported = 0
+    for top_level in ("topics", "provenance", "receipts", "search"):
+        target_root = data_root / top_level
+        if not target_root.exists():
+            continue
+        for path in target_root.rglob("*.md"):
+            if _port_legacy_frontmatter(path):
+                ported += 1
+    return ported
 
 
 def _find_legacy_install_manifest_path(*, home: Path | str | None = None) -> Optional[Path]:
@@ -475,7 +492,7 @@ def _rewrite_json_paths(path: Path) -> bool:
 
 def _rewrite_frontmatter_paths(path: Path) -> bool:
     try:
-        metadata, body = split_frontmatter(path.read_text())
+        metadata, body = split_frontmatter_for_migration(path.read_text())
     except ValueError:
         return False
 
@@ -484,6 +501,19 @@ def _rewrite_frontmatter_paths(path: Path) -> bool:
     if updated_metadata == metadata and updated_body == body:
         return False
     path.write_text(dump_frontmatter(updated_metadata, updated_body))
+    return True
+
+
+def _port_legacy_frontmatter(path: Path) -> bool:
+    text = path.read_text()
+    try:
+        is_legacy = uses_legacy_json_frontmatter(text)
+        metadata, body = split_frontmatter_for_migration(text)
+    except ValueError:
+        return False
+    if not is_legacy:
+        return False
+    path.write_text(dump_frontmatter(metadata, body))
     return True
 
 

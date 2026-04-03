@@ -1,0 +1,13 @@
+{
+  "name": "fleki-review-wiki",
+  "private": true,
+  "version": "4.5.2",
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10.9.2"
+  },
+  "dependencies": {
+    "@jackyzha0/quartz": "https://codeload.github.com/jackyzha0/quartz/tar.gz/refs/tags/v4.5.2"
+  }
+}
