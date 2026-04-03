@@ -35,6 +35,26 @@ class ValidationError(ValueError):
     pass
 
 
+def _format_allowed_values(values: set[str]) -> str:
+    return ", ".join(sorted(values))
+
+
+def _raise_invalid_choice(
+    field_name: str,
+    value: Any,
+    allowed_values: set[str],
+    *,
+    hint: str | None = None,
+) -> None:
+    message = (
+        f"{field_name} is invalid: {value!r}. "
+        f"Allowed values: {_format_allowed_values(allowed_values)}."
+    )
+    if hint:
+        message = f"{message} {hint}"
+    raise ValidationError(message)
+
+
 def _forbid_keys(data: Mapping[str, Any], keys: set[str], context: str) -> None:
     present = sorted(keys.intersection(data.keys()))
     if present:
@@ -128,7 +148,19 @@ def validate_save_decision(
     if set(source_ids) != set(source_bindings.keys()):
         raise ValidationError("source_bindings must exactly match ingest_summary.source_ids")
     if ingest_summary["authority_tier"] not in AUTHORITY_TIERS:
-        raise ValidationError("ingest_summary.authority_tier is invalid")
+        invalid_value = ingest_summary["authority_tier"]
+        hint = None
+        if invalid_value in AUTHORITY_POSTURES:
+            hint = (
+                f"{invalid_value!r} belongs to knowledge_units[].authority_posture, "
+                "not ingest_summary.authority_tier."
+            )
+        _raise_invalid_choice(
+            "ingest_summary.authority_tier",
+            invalid_value,
+            AUTHORITY_TIERS,
+            hint=hint,
+        )
     if ingest_summary["sensitivity"] not in SENSITIVITY_VALUES:
         raise ValidationError("ingest_summary.sensitivity is invalid")
 
@@ -227,7 +259,19 @@ def validate_save_decision(
             if unit["kind"] not in KNOWLEDGE_UNIT_KINDS:
                 raise ValidationError("invalid knowledge_unit.kind")
             if unit["authority_posture"] not in AUTHORITY_POSTURES:
-                raise ValidationError("invalid knowledge_unit.authority_posture")
+                invalid_value = unit["authority_posture"]
+                hint = None
+                if invalid_value in AUTHORITY_TIERS:
+                    hint = (
+                        f"{invalid_value!r} belongs to ingest_summary.authority_tier, "
+                        "not knowledge_unit.authority_posture."
+                    )
+                _raise_invalid_choice(
+                    "knowledge_unit.authority_posture",
+                    invalid_value,
+                    AUTHORITY_POSTURES,
+                    hint=hint,
+                )
             if unit["confidence"] not in {"high", "medium", "low"}:
                 raise ValidationError("invalid knowledge_unit.confidence")
             temporal_scope = unit.get("temporal_scope")

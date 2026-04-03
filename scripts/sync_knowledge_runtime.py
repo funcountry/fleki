@@ -12,6 +12,8 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SKILL_ROOT = REPO_ROOT / "skills" / "knowledge"
+EXAMPLES_ROOT = SKILL_ROOT / "references" / "examples"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
@@ -20,7 +22,7 @@ from knowledge_graph.install_targets import sync_tree  # noqa: E402
 
 def main() -> int:
     project_metadata = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    skill_root = REPO_ROOT / "skills" / "knowledge"
+    skill_root = SKILL_ROOT
     if not skill_root.exists():
         raise SystemExit(f"missing canonical skill package: {skill_root}")
 
@@ -104,6 +106,8 @@ def render_runtime_pyproject(project_metadata: dict[str, object]) -> str:
 
 
 def render_runtime_readme() -> str:
+    bindings_example = _render_example_json(EXAMPLES_ROOT / "minimal-save-bindings.json")
+    decision_example = _render_example_json(EXAMPLES_ROOT / "minimal-save-decision.json")
     return (
         "# Fleki Knowledge Runtime\n\n"
         "This directory is the generated Python runtime that ships inside the `knowledge` skill.\n"
@@ -117,99 +121,23 @@ def render_runtime_readme() -> str:
         "- installing or refreshing the CLI does not clear an existing graph\n"
         "- the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise\n\n"
         "Save contract notes:\n"
+        "- `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path\n"
         '- bindings may include `timestamp` as ISO 8601 source-observed time\n'
+        "- `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`\n"
+        "- `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`\n"
+        "- do not swap `authority_tier` and `authority_posture`\n"
+        "- `knowledge_units[].kind`: `fact`, `principle`, `playbook`, `decision`, `pattern`, `regression`, `glossary`, `question`\n"
         "- `knowledge_units[].temporal_scope`: `evergreen`, `time_bound`, `ephemeral`\n"
         "- `topic_actions[].lifecycle_state`: `current` or `historical`\n"
         "- `knowledge rebuild` owns `stale` and delete\n\n"
         "Minimal valid save example:\n\n"
         "Create `bindings.json`:\n\n"
         "```json\n"
-        "[\n"
-        "  {\n"
-        '    "source_id": "note.customerio.current",\n'
-        '    "local_path": "/absolute/path/to/customer-io.md",\n'
-        '    "source_kind": "markdown_doc",\n'
-        '    "authority_tier": "live_doctrine",\n'
-        '    "timestamp": "2026-04-03T12:00:00+00:00"\n'
-        "  }\n"
-        "]\n"
+        f"{bindings_example}\n"
         "```\n\n"
         "Create `decision.json`:\n\n"
         "```json\n"
-        "{\n"
-        '  "ingest_summary": {\n'
-        '    "source_ids": ["note.customerio.current"],\n'
-        '    "primary_domains": ["product"],\n'
-        '    "authority_tier": "live_doctrine",\n'
-        '    "sensitivity": "internal",\n'
-        '    "semantic_summary": "Customer.io setup guidance."\n'
-        "  },\n"
-        '  "source_reading_reports": [\n'
-        "    {\n"
-        '      "source_id": "note.customerio.current",\n'
-        '      "reading_mode": "direct_local_text",\n'
-        '      "approved_helpers_used": [],\n'
-        '      "readable_units": ["full text"],\n'
-        '      "gaps": [],\n'
-        '      "confidence_notes": []\n'
-        "    }\n"
-        "  ],\n"
-        '  "topic_actions": [\n'
-        "    {\n"
-        '      "topic_path": "product/customer-io/current-setup",\n'
-        '      "page_kind": "topic",\n'
-        '      "action": "create",\n'
-        '      "lifecycle_state": "current",\n'
-        '      "candidate_title": "Customer.io Current Setup",\n'
-        '      "why": "Capture the current setup guidance.",\n'
-        '      "knowledge_units": [\n'
-        "        {\n"
-        '          "kind": "fact",\n'
-        '          "temporal_scope": "time_bound",\n'
-        '          "target_section": {\n'
-        '            "section_id": null,\n'
-        '            "heading": "Current Understanding"\n'
-        "          },\n"
-        '          "statement": "Customer.io is configured through the current workspace flow.",\n'
-        '          "rationale": "This source describes the current setup path.",\n'
-        '          "authority_posture": "live_doctrine",\n'
-        '          "confidence": "high",\n'
-        '          "evidence": [\n'
-        "            {\n"
-        '              "source_id": "note.customerio.current",\n'
-        '              "locator": "entire note",\n'
-        '              "notes": ""\n'
-        "            }\n"
-        "          ]\n"
-        "        }\n"
-        "      ]\n"
-        "    }\n"
-        "  ],\n"
-        '  "provenance_notes": [\n'
-        "    {\n"
-        '      "source_ids": ["note.customerio.current"],\n'
-        '      "bundle_rationale": null,\n'
-        '      "title": "Customer.io setup provenance",\n'
-        '      "summary": "Current setup guidance from the local source.",\n'
-        '      "source_reading_summary": "Read directly from the local filesystem.",\n'
-        '      "what_this_source_contributes": ["Current Customer.io setup guidance."],\n'
-        '      "knowledge_sections_touched": [\n'
-        "        {\n"
-        '          "topic_path": "product/customer-io/current-setup",\n'
-        '          "section_heading": "Current Understanding"\n'
-        "        }\n"
-        "      ],\n"
-        '      "sensitivity_notes": "internal"\n'
-        "    }\n"
-        "  ],\n"
-        '  "conflicts_or_questions": [],\n'
-        '  "asset_actions": [],\n'
-        '  "recommended_next_step": {\n'
-        '    "action": "queue_rebuild_topic",\n'
-        '    "scope": ["product/customer-io"],\n'
-        '    "why": "Refresh nearby semantic neighbors later if needed."\n'
-        "  }\n"
-        "}\n"
+        f"{decision_example}\n"
         "```\n\n"
         "Apply it with:\n\n"
         "```bash\n"
@@ -228,6 +156,13 @@ def render_runtime_readme() -> str:
         "```\n\n"
         "This directory is generated. Edit `src/knowledge_graph/**`, `pyproject.toml`, or `skills/knowledge/**` in Fleki, then regenerate the runtime bundle.\n"
     )
+
+
+def _render_example_json(path: Path) -> str:
+    if not path.exists():
+        raise SystemExit(f"missing runtime README example source: {path}")
+    payload = json.loads(path.read_text())
+    return json.dumps(payload, indent=2, sort_keys=False)
 
 
 if __name__ == "__main__":

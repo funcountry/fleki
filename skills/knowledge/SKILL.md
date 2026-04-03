@@ -65,17 +65,21 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 ### `knowledge save`
 
 - Treat inputs as source material, not as filing destinations.
+- `knowledge save` is apply-only. There is no preview, validate-only, or dry-run save path.
 - Inspect the local source files directly before making semantic decisions.
 - Preserve the source first and record honest reading limits before filing knowledge.
 - For copied PDFs, treat the structured render bundle as repository-owned evidence that must exist before provenance and topic writes succeed; do not invent or hand-author render metadata in the semantic decision payload.
 - Extract durable knowledge units and map them to the smallest correct semantic topic set.
 - Preserve source records and provenance notes for every material change. If multiple sources are ingested together, preserve per-source reading/provenance detail or an explicit bundle rationale.
 - Apply bounded synchronous changes to the smallest affected page sections and queue wider reorganization for `rebuild` when needed.
+- Use `fact` for plain observations unless another kind adds stronger semantic meaning.
+- Keep `ingest_summary.authority_tier` separate from `knowledge_units[].authority_posture`. `historical_support` is a tier, not a posture.
 - Follow `references/save-ingestion.md` for the full ingestion decision contract.
 
 ### `knowledge search`
 
 - Search semantic pages and likely aliases first.
+- Return zero results on a miss instead of a nearest-looking false positive.
 - Prefer existing knowledge pages and indexes over raw source artifacts.
 - Read semantic pages directly and inspect provenance or raw sources only when needed.
 - Apply authority as a ranking rule, not a decorative note.
@@ -85,7 +89,10 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 ### `knowledge trace`
 
 - Walk from the claim or locator to the relevant knowledge page, then to provenance notes, then to source records.
+- Best-effort claim text should resolve to the best matching section and the most relevant supporting provenance when the graph has enough evidence to narrow it.
+- If claim text cannot narrow honestly, `trace` should fail instead of returning a page-level guess.
 - For PDF-backed claims, continue the chain to the render manifest and stored render markdown or the explicit omission reason; `trace` is the canonical inspection surface for PDF fidelity state.
+- If a PDF source record predates the render-or-omission contract, surface the `render_contract_gaps` entry and repair it with the repo maintenance script instead of pretending trace is complete.
 - Distinguish live doctrine, supported practice, historical support, and tentative inference.
 - Surface conflicts, missing evidence, or authority collisions instead of choosing silently.
 
@@ -99,7 +106,9 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 
 - Report the specific subsystem or topic area under discussion, not a vague global reassurance.
 - Highlight the most decision-relevant next action when status reveals drift or backlog.
+- Surface missing lifecycle metadata when older pages still have not been normalized.
 - Treat `recent_topics` and `recent_source_ingests` as the primary recentness view once they are available; receipts and indexes are supporting evidence.
+- Treat `status` as graph truth, not as a runtime-install health check.
 
 ## Install And Repair
 

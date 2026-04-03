@@ -113,6 +113,69 @@ class SaveWorkflowTest(unittest.TestCase):
             "high_fidelity",
         )
 
+    def test_repeated_save_is_idempotent_for_identical_payload(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "repo-readme.md"
+        source_path.write_text("# Repo\n\nAIM is auth-only.\n")
+
+        binding = SourceBinding(
+            source_id="repo.readme",
+            local_path=source_path,
+            source_kind="markdown_doc",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/smoke-repo-readme",
+            candidate_title="Smoke Repo README",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"].append(
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "AIM is auth-only.",
+                "rationale": "The README calls out the auth-only boundary.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 3",
+                        "notes": "",
+                    }
+                ],
+            }
+        )
+
+        first_result = repo.apply_save(source_bindings=[binding], decision=decision)
+        second_result = repo.apply_save(source_bindings=[binding], decision=decision)
+
+        self.assertEqual(len(first_result["touched_page_sections"]), 1)
+        self.assertEqual(second_result["touched_page_sections"], first_result["touched_page_sections"])
+        self.assertEqual(len(second_result["provenance_notes"]), 1)
+
+        topic_path = repo.data_root / "topics" / "knowledge-system" / "smoke-repo-readme.md"
+        topic_metadata, topic_text = split_frontmatter(topic_path.read_text())
+        self.assertEqual(topic_text.count("## Provenance Notes"), 1)
+        section_id = first_result["touched_page_sections"][0].split("#", 1)[1]
+        support_entries = topic_metadata["section_support"][section_id]
+        self.assertEqual(len(support_entries), 2)
+        self.assertEqual(
+            {entry["provenance_id"] for entry in support_entries},
+            {
+                first_result["provenance_notes"][0].split("/")[-1].removesuffix(".md"),
+            },
+        )
+
+        provenance_files = list((repo.data_root / "provenance" / "other").glob("*.md"))
+        self.assertEqual(len(provenance_files), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

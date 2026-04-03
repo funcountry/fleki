@@ -58,6 +58,30 @@ def copy_fixture_pdf(root: Path, name: str = "knowledge-fixture.pdf") -> Path:
     return destination
 
 
+def create_structured_pdf(root: Path, name: str = "structured-fixture.pdf") -> Path:
+    import fitz
+
+    destination = root / name
+    document = fitz.open()
+    page = document.new_page()
+    y = 72
+    lines = [
+        ("Heading: Tone Guide", 20),
+        ("1. Acknowledge the issue", 12),
+        ("2. Offer the next step", 12),
+        ("- Keep the tone calm", 12),
+        ("- Mention <X> and <specific issue>", 12),
+        ("Section: Examples", 16),
+        ("Use concise bullets.", 12),
+    ]
+    for text, size in lines:
+        page.insert_text((72, y), text, fontsize=size)
+        y += size + 10
+    document.save(destination)
+    document.close()
+    return destination
+
+
 def sample_save_decision(*, source_ids, topic_path, candidate_title, authority_tier="mixed", recommended_scope=None):
     if recommended_scope is None:
         recommended_scope = [topic_path.split("/", 1)[0]]

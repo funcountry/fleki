@@ -12,6 +12,10 @@
 
 ## Validation matrix
 
+- valid `knowledge_unit.kind` only: `fact`, `principle`, `playbook`, `decision`, `pattern`, `regression`, `glossary`, `question`
+- valid `ingest_summary.authority_tier` only: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`
+- valid `knowledge_units[].authority_posture` only: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`
+- do not swap `authority_tier` and `authority_posture`
 - semantic path, not source-family path
 - evidence on every knowledge unit
 - valid `temporal_scope` only: `evergreen`, `time_bound`, `ephemeral`

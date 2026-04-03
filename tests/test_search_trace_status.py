@@ -1,19 +1,120 @@
 from __future__ import annotations
 
+import json
+import shutil
 import unittest
 
 from common import copy_fixture_pdf, make_temp_repo, sample_save_decision
+from knowledge_graph.frontmatter import dump_frontmatter, split_frontmatter
 from knowledge_graph import (
     RebuildPageUpdate,
     RebuildPlan,
     SourceBinding,
-    codex_runtime_manifest,
-    hermes_runtime_manifest,
-    openclaw_runtime_manifest,
+    ValidationError,
 )
 
 
 class SearchTraceStatusTest(unittest.TestCase):
+    def test_claim_text_trace_filters_to_relevant_provenance(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        pdf_path = copy_fixture_pdf(root, "claim-trace.pdf")
+        image_path = root / "claim-trace.png"
+        image_path.write_bytes(b"\x89PNG\r\n\x1a\nmock")
+
+        pdf_binding = SourceBinding(
+            source_id="phase6.smoke.multimodal.knowledge-pdf",
+            local_path=pdf_path,
+            source_kind="pdf_research",
+        )
+        image_binding = SourceBinding(
+            source_id="phase6.smoke.multimodal.knowledge-image",
+            local_path=image_path,
+            source_kind="image_observation",
+        )
+
+        decision = sample_save_decision(
+            source_ids=[pdf_binding.source_id, image_binding.source_id],
+            topic_path="knowledge-system/multimodal-runtime-validation",
+            candidate_title="Multimodal Runtime Validation",
+            authority_tier="raw_runtime",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["source_reading_reports"][0]["reading_mode"] = "direct_local_pdf"
+        decision["source_reading_reports"][1]["reading_mode"] = "direct_local_image"
+        decision["topic_actions"][0]["knowledge_units"] = [
+            {
+                "kind": "fact",
+                "temporal_scope": "time_bound",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "Direct local PDF ingest worked for the Phase 6 smoke input.",
+                "rationale": "The runtime successfully saved the PDF source.",
+                "authority_posture": "supported_by_runtime",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": pdf_binding.source_id,
+                        "locator": "render markdown summary",
+                        "notes": "",
+                    }
+                ],
+            },
+            {
+                "kind": "fact",
+                "temporal_scope": "time_bound",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "Corrupt image decode failure showed up during the smoke run.",
+                "rationale": "The runtime logged the image failure separately.",
+                "authority_posture": "supported_by_runtime",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": image_binding.source_id,
+                        "locator": "image decode error",
+                        "notes": "",
+                    }
+                ],
+            },
+        ]
+        decision["provenance_notes"][0]["summary"] = (
+            "Direct local PDF ingest worked for the Phase 6 smoke input."
+        )
+        decision["provenance_notes"][0]["what_this_source_contributes"] = [
+            "PDF ingest success for the smoke input."
+        ]
+        decision["provenance_notes"][1]["summary"] = (
+            "Corrupt image decode failure showed up during the smoke run."
+        )
+        decision["provenance_notes"][1]["what_this_source_contributes"] = [
+            "Image decode failure details for the smoke run."
+        ]
+
+        repo.apply_save(source_bindings=[pdf_binding, image_binding], decision=decision)
+
+        trace = repo.trace("Direct local PDF ingest worked for the Phase 6 smoke input.")
+        self.assertIsNotNone(trace["section_id"])
+        self.assertEqual(trace["matched_heading"], "Current Understanding")
+        self.assertEqual(
+            trace["matched_snippet"],
+            "- Direct local PDF ingest worked for the Phase 6 smoke input.",
+        )
+        self.assertEqual(trace["matched_evidence_locators"], ["render markdown summary"])
+        self.assertEqual(len(trace["provenance"]), 1)
+        self.assertIn("/pdf/", trace["provenance"][0])
+        self.assertEqual(
+            trace["source_records"],
+            [
+                "sources/pdf/phase6.smoke.multimodal.knowledge-pdf__claim-trace.pdf.record.json",
+            ],
+        )
+
     def test_search_trace_and_status_are_authority_aware(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
@@ -81,12 +182,7 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertTrue(trace["provenance"])
         self.assertTrue(trace["source_records"])
 
-        runtime_manifests = [
-            codex_runtime_manifest(root, layout=repo.layout),
-            hermes_runtime_manifest(root, layout=repo.layout),
-            openclaw_runtime_manifest(root, layout=repo.layout),
-        ]
-        status = repo.status(runtime_manifests=runtime_manifests)
+        status = repo.status()
         self.assertIn("doctrine", status["rebuild_pending"])
         self.assertEqual(status["unresolved_contradictions"], 0)
         self.assertIn("doctrine/shared-agent-learnings", status["hot_topics"])
@@ -97,12 +193,13 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertEqual(status["historical_topic_count"], 1)
         self.assertEqual(status["stale_topic_count"], 0)
         self.assertEqual(status["superseded_topic_count"], 0)
+        self.assertEqual(status["missing_lifecycle_state_count"], 0)
         self.assertEqual(status["resolved_data_root"], str(repo.data_root))
         self.assertEqual(status["install_manifest_path"], str(repo.install_manifest_path))
         self.assertTrue(status["install_manifest_present"])
         self.assertFalse(status["legacy_repo_graph_detected"])
-        self.assertTrue(status["runtime_agreement"]["codex"]["data_root_match"])
-        self.assertTrue(status["runtime_agreement"]["hermes"]["install_manifest_path_match"])
+        self.assertNotIn("runtime_agreement", status)
+        self.assertNotIn("runtime_agreement_state", status)
 
     def test_search_prefers_topical_match_over_path_noise(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -150,6 +247,153 @@ class SearchTraceStatusTest(unittest.TestCase):
             search["results"][0]["current_path"],
             "product/customer-io/current-setup",
         )
+
+    def test_search_uses_best_matching_line_for_snippet(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "repo-readme.md"
+        source_path.write_text("# Repo\n\nAIM is auth-only.\n")
+
+        binding = SourceBinding(
+            source_id="repo.readme",
+            local_path=source_path,
+            source_kind="markdown_doc",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/smoke-repo-readme",
+            candidate_title="Smoke Repo README",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"] = [
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "The Poker Skill agents repo describes a multi-agent Slack fleet running on the Mac host.",
+                "rationale": "Background context from the README.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 1",
+                        "notes": "",
+                    }
+                ],
+            },
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "AIM is auth-only.",
+                "rationale": "The README names AIM as the auth-only lane.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 3",
+                        "notes": "",
+                    }
+                ],
+            },
+        ]
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        search = repo.search("AIM is auth-only")
+        self.assertEqual(search["results"][0]["current_path"], "knowledge-system/smoke-repo-readme")
+        self.assertEqual(search["results"][0]["snippet"], "- AIM is auth-only.")
+
+    def test_search_returns_no_results_for_confident_miss(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "known.md"
+        source_path.write_text(
+            "This page mentions a claim moment and says some flows exist already, "
+            "but it does not contain the bogus phrase.\n"
+        )
+
+        binding = SourceBinding(
+            source_id="note.known",
+            local_path=source_path,
+            source_kind="markdown_doc",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="leaderboard/liquidity-and-reopen-loop",
+            candidate_title="Liquidity And Reopen Loop",
+            recommended_scope=["leaderboard"],
+        )
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        search = repo.search("this claim definitely does not exist 12345")
+        self.assertEqual(search["results"], [])
+
+    def test_trace_rejects_bogus_path_and_claim_text(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "known.md"
+        source_path.write_text(
+            "This page mentions a claim moment and says some flows exist already, "
+            "but it does not contain the bogus phrase.\n"
+        )
+
+        binding = SourceBinding(
+            source_id="note.known",
+            local_path=source_path,
+            source_kind="markdown_doc",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="leaderboard/liquidity-and-reopen-loop",
+            candidate_title="Liquidity And Reopen Loop",
+            recommended_scope=["leaderboard"],
+        )
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        with self.assertRaises(ValidationError):
+            repo.trace("knowledge-system/does-not-exist")
+        with self.assertRaises(ValidationError):
+            repo.trace("this claim definitely does not exist 12345")
+
+    def test_status_reports_missing_lifecycle_state_count(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "known.md"
+        source_path.write_text("Leaderboard liquidity and reopen loop guidance.\n")
+
+        binding = SourceBinding(
+            source_id="note.known",
+            local_path=source_path,
+            source_kind="markdown_doc",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="leaderboard/liquidity-and-reopen-loop",
+            candidate_title="Liquidity And Reopen Loop",
+            recommended_scope=["leaderboard"],
+        )
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        page_path = repo.data_root / "topics" / "leaderboard" / "liquidity-and-reopen-loop.md"
+        metadata, body = split_frontmatter(page_path.read_text())
+        metadata.pop("lifecycle_state", None)
+        page_path.write_text(dump_frontmatter(metadata, body))
+
+        status = repo.status()
+        self.assertEqual(status["missing_lifecycle_state_count"], 1)
 
     def test_trace_and_status_surface_pdf_render_and_omission_state(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -280,6 +524,60 @@ class SearchTraceStatusTest(unittest.TestCase):
         trace = repo.trace("product/customer-io/legacy-setup")
         self.assertEqual(trace["effective_lifecycle_state"], "superseded")
         self.assertEqual(trace["replacement_paths"], ["product/customer-io/current-setup"])
+
+    def test_trace_and_status_surface_legacy_pdf_render_contract_gap(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        pdf_path = copy_fixture_pdf(root, "legacy-gap.pdf")
+        binding = SourceBinding(
+            source_id="pdf.legacy.gap",
+            local_path=pdf_path,
+            source_kind="pdf_research",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/multimodal-runtime-validation",
+            candidate_title="Multimodal Runtime Validation",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["source_reading_reports"][0]["reading_mode"] = "direct_local_pdf"
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        manifest_path = next((repo.data_root / "sources" / "pdf").glob("*.record.json"))
+        manifest = json.loads(manifest_path.read_text())
+        manifest.pop("source_family", None)
+        render_manifest_path = manifest.pop("render_manifest_relative_path")
+        render_markdown_path = manifest.pop("render_relative_path")
+        manifest.pop("render_eligibility", None)
+        manifest.pop("render_omission_reason", None)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        (repo.data_root / render_manifest_path).unlink()
+        (repo.data_root / render_markdown_path).unlink()
+        assets_dir = (repo.data_root / render_markdown_path).with_suffix(".assets")
+        if assets_dir.exists():
+            shutil.rmtree(assets_dir)
+
+        trace = repo.trace("knowledge-system/multimodal-runtime-validation")
+        self.assertEqual(trace["render_manifests"], [])
+        self.assertEqual(trace["render_artifacts"], [])
+        self.assertEqual(trace["render_omissions"], [])
+        self.assertEqual(
+            trace["render_contract_gaps"],
+            [
+                {
+                    "source_id": "pdf.legacy.gap",
+                    "source_record": manifest_path.relative_to(repo.data_root).as_posix(),
+                    "gap_reason": "legacy_missing_render_contract",
+                }
+            ],
+        )
+
+        status = repo.status()
+        self.assertEqual(status["pdf_rendered_sources"], 0)
+        self.assertEqual(status["pdf_render_omitted_sources"], 0)
+        self.assertEqual(status["pdf_render_contract_gap_count"], 1)
 
 
 if __name__ == "__main__":

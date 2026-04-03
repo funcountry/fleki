@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -9,22 +10,32 @@ from .authority import LIFECYCLE_STATES
 from .layout import resolve_knowledge_layout
 from .models import RebuildPageUpdate, RebuildPlan, SourceBinding
 from .repository import KnowledgeRepository
+from .validation import ValidationError
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
 
-    if args.command == "status":
-        return _command_status(args)
-    if args.command == "search":
-        return _command_search(args)
-    if args.command == "trace":
-        return _command_trace(args)
-    if args.command == "save":
-        return _command_save(args)
-    if args.command == "rebuild":
-        return _command_rebuild(args)
+        if args.command == "status":
+            return _command_status(args)
+        if args.command == "search":
+            return _command_search(args)
+        if args.command == "trace":
+            return _command_trace(args)
+        if args.command == "save":
+            return _command_save(args)
+        if args.command == "rebuild":
+            return _command_rebuild(args)
+    except ValidationError as exc:
+        return _emit_error(str(exc))
+    except FileNotFoundError as exc:
+        return _emit_error(f"file not found: {exc.filename or exc}")
+    except json.JSONDecodeError as exc:
+        return _emit_error(
+            f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        )
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -73,6 +84,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Apply a save decision from JSON inputs.",
         epilog=(
             'Bindings may include "timestamp" (ISO 8601 source-observed time).\n'
+            "ingest_summary.authority_tier: generated_mirror | historical_support | live_doctrine | mixed | raw_runtime\n"
+            "knowledge_units[].authority_posture: live_doctrine | mixed | supported_by_internal_session | supported_by_runtime | tentative\n"
+            "knowledge_units[].kind: fact | principle | playbook | decision | pattern | regression | glossary | question\n"
             "knowledge_units[].temporal_scope: evergreen | time_bound | ephemeral\n"
             "topic_actions[].lifecycle_state: current | historical\n"
             "Rebuild owns stale transitions and delete.\n"
@@ -128,6 +142,8 @@ def _command_status(args: argparse.Namespace) -> int:
             f"historical_topic_count={result['historical_topic_count']}",
             f"stale_topic_count={result['stale_topic_count']}",
             f"superseded_topic_count={result['superseded_topic_count']}",
+            f"missing_lifecycle_state_count={result['missing_lifecycle_state_count']}",
+            f"pdf_render_contract_gap_count={result['pdf_render_contract_gap_count']}",
         ),
     )
     return 0
@@ -161,12 +177,16 @@ def _command_trace(args: argparse.Namespace) -> int:
         return 0
     lines = [
         f"current_path={result['current_path']}",
+        f"matched_heading={result['matched_heading'] or 'none'}",
+        f"matched_snippet={result['matched_snippet'] or 'none'}",
+        f"matched_evidence_locators={','.join(result['matched_evidence_locators']) or 'none'}",
         f"authority_posture={result['authority_posture']}",
         f"lifecycle_state={result['lifecycle_state']}",
         f"effective_lifecycle_state={result['effective_lifecycle_state']}",
         f"last_supported_at={result['last_supported_at']}",
         f"provenance_count={len(result['provenance'])}",
         f"source_record_count={len(result['source_records'])}",
+        f"render_contract_gap_count={len(result['render_contract_gaps'])}",
     ]
     _emit_payload(result, as_json=False, lines=lines)
     return 0
@@ -174,10 +194,7 @@ def _command_trace(args: argparse.Namespace) -> int:
 
 def _command_save(args: argparse.Namespace) -> int:
     repo = _build_repo(args)
-    bindings_payload = _load_json(args.bindings)
-    if not isinstance(bindings_payload, list):
-        raise SystemExit("--bindings must point to a JSON list")
-    bindings = tuple(_binding_from_dict(item) for item in bindings_payload)
+    bindings = _load_bindings(args.bindings)
     decision = _load_json(args.decision)
     if not isinstance(decision, dict):
         raise SystemExit("--decision must point to a JSON object")
@@ -292,6 +309,13 @@ def _optional_lifecycle_state(value: Any) -> str | None:
     return rendered
 
 
+def _load_bindings(path_text: str) -> tuple[SourceBinding, ...]:
+    bindings_payload = _load_json(path_text)
+    if not isinstance(bindings_payload, list):
+        raise SystemExit("--bindings must point to a JSON list")
+    return tuple(_binding_from_dict(item) for item in bindings_payload)
+
+
 def _load_json(path_text: str) -> Any:
     return json.loads(Path(path_text).read_text())
 
@@ -302,6 +326,11 @@ def _emit_payload(payload: dict[str, Any], *, as_json: bool, lines: Iterable[str
         return
     for line in lines:
         print(line)
+
+
+def _emit_error(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
