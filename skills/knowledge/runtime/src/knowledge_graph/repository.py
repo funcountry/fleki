@@ -211,6 +211,7 @@ class KnowledgeRepository:
         source_manifests = self._load_source_record_manifests(source_paths)
         source_observed_at_by_source = {}
         captured_at_by_source = {}
+        artifacts_by_source = {}
         render_manifest_paths = []
         render_artifact_paths = []
         render_omissions = []
@@ -221,6 +222,10 @@ class KnowledgeRepository:
                 captured_at_by_source[source_id] = manifest.get("captured_at")
                 if manifest.get("source_observed_at") is not None:
                     source_observed_at_by_source[source_id] = manifest["source_observed_at"]
+                artifacts_by_source[source_id] = self._artifact_summary_from_manifest(
+                    source_record=relative_path,
+                    manifest=manifest,
+                )
             gap_reason = self._render_contract_gap_reason(manifest)
             if gap_reason:
                 render_contract_gaps.append(
@@ -273,6 +278,7 @@ class KnowledgeRepository:
             "captured_at_by_source": captured_at_by_source,
             "provenance": [entry["relative_path"] for entry in provenance_entries],
             "source_records": source_paths,
+            "artifacts_by_source": artifacts_by_source,
             "render_manifests": render_manifest_paths,
             "render_artifacts": render_artifact_paths,
             "render_omissions": render_omissions,
@@ -459,8 +465,9 @@ class KnowledgeRepository:
             raw_destination = destination_dir / f"{safe_id}__{safe_name}"
             manifest_path = Path(f"{raw_destination}.record.json")
 
-            if binding.preserve_mode == "pointer" or binding.sensitivity == "secret_pointer_only":
-                storage_mode = "pointer"
+            # Sensitivity alone owns storage mode. Callers do not choose copy vs pointer.
+            storage_mode = self._storage_mode_for_binding(binding)
+            if storage_mode == "pointer":
                 pointer_payload = {
                     "source_id": source_id,
                     "source_kind": binding.source_kind,
@@ -1797,11 +1804,49 @@ class KnowledgeRepository:
                 digest.update(chunk)
         return digest.hexdigest()
 
+    def _storage_mode_for_binding(self, binding: SourceBinding) -> str:
+        return "pointer" if binding.sensitivity == "secret_pointer_only" else "copy"
+
+    def _artifact_summary_from_manifest(
+        self,
+        *,
+        source_record: str,
+        manifest: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        # Source manifests are the single source of truth for artifact presentation.
+        source_family = self._manifest_source_family(manifest)
+        storage_mode = str(manifest.get("storage_mode", "copy"))
+        render_manifest_path = manifest.get("render_manifest_relative_path")
+        render_markdown_path = manifest.get("render_relative_path")
+        render_asset_paths: List[str] = []
+        if render_manifest_path:
+            render_manifest = self._load_render_manifest(str(render_manifest_path))
+            render_asset_paths = [
+                str(path) for path in render_manifest.get("asset_relative_paths", [])
+            ]
+        return {
+            "source_record": source_record,
+            "source_family": source_family,
+            "source_kind": manifest.get("source_kind"),
+            "sensitivity": manifest.get("sensitivity", "internal"),
+            "storage_mode": storage_mode,
+            "primary_artifact_kind": (
+                "pointer_record" if storage_mode == "pointer" else "copied_file"
+            ),
+            "primary_artifact_path": manifest.get("relative_path"),
+            "captured_at": manifest.get("captured_at"),
+            "source_observed_at": manifest.get("source_observed_at"),
+            "sha256": manifest.get("sha256"),
+            "render_manifest_path": render_manifest_path,
+            "render_markdown_path": render_markdown_path,
+            "render_asset_paths": render_asset_paths,
+            "render_omission_reason": manifest.get("render_omission_reason"),
+            "render_contract_gap": self._render_contract_gap_reason(manifest),
+        }
+
     def _pdf_render_omission_reason(self, binding: SourceBinding) -> str:
         if binding.sensitivity == "secret_pointer_only":
             return "disallowed_by_sensitivity"
-        if binding.preserve_mode == "pointer":
-            return "disallowed_by_storage_mode"
         raise ValidationError(
             f"unable to infer PDF render omission reason for {binding.source_id}"
         )

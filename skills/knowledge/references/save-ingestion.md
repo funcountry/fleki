@@ -6,6 +6,11 @@ Use this contract when a local agent is saving source material into the semantic
 
 Artifacts go in, semantic knowledge plus provenance come out.
 
+Every save must leave behind one durable artifact target.
+- non-secret sources are copied into Fleki storage
+- `secret_pointer_only` sources are preserved as pointer-backed artifacts
+- callers do not choose the storage mode
+
 The persistent thing we care about is the semantic graph, not the source-family filing system.
 
 `knowledge save` applies immediately. There is no preview, validate-only, or dry-run save path in this workflow.

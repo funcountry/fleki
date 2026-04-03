@@ -79,6 +79,11 @@ class SkillPackageTest(unittest.TestCase):
         self.assertIn('knowledge = "knowledge_graph.cli:main"', runtime_pyproject)
         self.assertIn('"docling>=2.69,<3"', runtime_pyproject)
 
+        runtime_repository = (runtime_root / "src" / "knowledge_graph" / "repository.py").read_text()
+        self.assertIn('"artifacts_by_source"', runtime_repository)
+        self.assertIn("def _artifact_summary_from_manifest(", runtime_repository)
+        self.assertFalse((runtime_root / "src" / "knowledge_graph" / "review_wiki").exists())
+
         runtime_readme = (runtime_root / "README.md").read_text()
         self.assertIn("Minimal valid save example", runtime_readme)
         self.assertIn("Create `bindings.json`", runtime_readme)

@@ -98,7 +98,6 @@ class SourceFamiliesTest(unittest.TestCase):
             source_kind="pdf_secret",
             source_family="pdf",
             sensitivity="secret_pointer_only",
-            preserve_mode="pointer",
             timestamp="2026-04-03T06:00:00+00:00",
         )
         decision = sample_save_decision(

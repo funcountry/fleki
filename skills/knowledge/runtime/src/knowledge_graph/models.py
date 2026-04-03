@@ -13,7 +13,6 @@ class SourceBinding:
     source_family: str
     authority_tier: str = "historical_support"
     sensitivity: str = "internal"
-    preserve_mode: str = "copy"
     timestamp: Optional[str] = None
     notes: Optional[str] = None
 

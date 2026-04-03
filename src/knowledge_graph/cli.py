@@ -279,6 +279,10 @@ def _build_repo(args: argparse.Namespace) -> KnowledgeRepository:
 def _binding_from_dict(payload: Any) -> SourceBinding:
     if not isinstance(payload, dict):
         raise SystemExit("each source binding must be a JSON object")
+    if "preserve_mode" in payload:
+        raise ValidationError(
+            "source binding must not include preserve_mode; storage policy is owned by Fleki"
+        )
     missing = [
         key
         for key in ["source_id", "local_path", "source_kind", "source_family", "timestamp"]
@@ -298,7 +302,6 @@ def _binding_from_dict(payload: Any) -> SourceBinding:
         ),
         authority_tier=str(payload.get("authority_tier", "historical_support")),
         sensitivity=str(payload.get("sensitivity", "internal")),
-        preserve_mode=str(payload.get("preserve_mode", "copy")),
         timestamp=validate_source_timestamp(
             payload.get("timestamp"),
             field_name="source_binding.timestamp",

@@ -14,8 +14,6 @@ This skill is about semantic knowledge with provenance, not artifact filing, gen
 
 Assume the agent is local, the skill is local, and the source files are local. Direct filesystem inspection and native multimodal reasoning are the default operating model.
 
-Use the dated host capability snapshot in the canonical architecture plan for current-host modality claims. In this pass, that means GPT-5.4-backed local text/image reasoning, with PDF handling only where the active runtime surface exposes documented file input.
-
 ## When to use
 
 - The user wants to save sessions, docs, PDFs, images, notes, or other source material into the shared semantic knowledge graph.
@@ -36,21 +34,22 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 
 - Organize by meaning first, never by source-family first.
 - Use local file access and native multimodal reasoning first. Do not invent missing capability where the runtime already has it.
-- Keep capability claims precise: for the current default lane, text and images are in scope; PDF handling is in scope where the active runtime surface exposes documented file input; audio/video are not implicit v1 assumptions.
+- Keep capability claims precise: text and images are in scope; PDF handling is in scope where the active runtime surface exposes documented file input; audio/video are not implicit assumptions.
 - Provenance is mandatory for every non-trivial claim.
 - Preserve authority posture honestly. Session material, runtime traces, and generated outputs do not become live doctrine without basis.
 - Prefer updating the smallest correct topic set over creating near-duplicates.
 - Canonical graph state may only be mutated through the shared `knowledge` contract. If the repo-local core library is available, use it instead of editing `knowledge/**` by hand.
 - Do not add or rely on helper scripts, helper harnesses, retrieval indexes, or deterministic preprocessors unless Amir has explicitly approved that exact helper.
-- The live graph root is `resolved_data_root`, usually `~/.fleki/knowledge`. The checked-in repo `knowledge/**` tree is reference content and a migration seed, not live mutable truth.
+- The live graph root is `resolved_data_root`, usually `~/.fleki/knowledge`. The checked-in repo `knowledge/**` tree is reference content, not live mutable truth.
 - `knowledge search` may list exact or literal candidates. It does not do paraphrase lookup, token splitting, or best-guess retrieval.
 - `knowledge trace` must follow exact refs only. The agent reads the candidates and does the meaning-making.
 - Treat helper approval as real policy, not a loose flag: the approval must identify the exact helper, point to the Decision Log entry, define scope, and define expiry/timebox.
-- If the approval is a fallback/exception, it is invalid unless the plan/package also sets `fallback_policy: approved` and the Decision Log entry includes a timebox plus removal plan.
+- If the approval is a fallback exception, it must still be explicit, scoped, and timeboxed.
 - Cite concrete paths, ids, or provenance notes in answers that depend on graph content.
 - If support is weak or conflicting, say so explicitly instead of smoothing it over.
-- Handle sensitive material by preserving pointer-level provenance and redacting secrets or prompt-bearing values.
-- Copied PDFs now persist a source-adjacent render bundle (`.render.md`, `.render.manifest.json`, optional `.assets/`) before semantic filing; pointer-only or `secret_pointer_only` PDFs must surface an explicit render omission instead.
+- Every saved source must resolve to one durable artifact target. Non-secret sources are copied; `secret_pointer_only` sources are preserved as pointer-backed artifacts.
+- Handle sensitive material by preserving pointer-backed artifacts and redacting secrets or prompt-bearing values where needed.
+- Copied PDFs persist a source-adjacent render bundle (`.render.md`, `.render.manifest.json`, optional `.assets/`) before semantic filing; `secret_pointer_only` PDFs must surface an explicit render omission instead.
 - `knowledge save` may mark a page `current` or `historical`; `knowledge rebuild` owns `stale` and delete.
 - Agents should retire fully superseded or clearly stale knowledge through `knowledge rebuild`, not by hand-editing the graph.
 - If the shared interface is unavailable, say that clearly and do not pretend an ingest, rebuild, or graph-backed search succeeded when it did not.
@@ -73,7 +72,8 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Each binding must declare `timestamp` as ISO 8601 source-observed time.
 - If source-observed time is unknown, stop and say that plainly instead of inventing one.
 - Inspect the local source files directly before making semantic decisions.
-- Preserve the source first and record honest reading limits before filing knowledge.
+- Preserve the source in Fleki-owned storage first and record honest reading limits before filing knowledge.
+- Callers do not choose copy vs pointer mode. Fleki copies non-secret sources and preserves pointer-backed artifacts only for `secret_pointer_only`.
 - For copied PDFs, treat the structured render bundle as repository-owned evidence that must exist before provenance and topic writes succeed; do not invent or hand-author render metadata in the semantic decision payload.
 - Extract durable knowledge units and map them to the smallest correct semantic topic set.
 - Preserve source records and provenance notes for every material change. If multiple sources are ingested together, preserve per-source reading/provenance detail or an explicit bundle rationale.

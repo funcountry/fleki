@@ -155,7 +155,6 @@ class CliContractTest(unittest.TestCase):
                 "timestamp": "2026-04-03T12:00:00+00:00",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
-                "preserve_mode": "copy",
             }
         ]
         decision_payload = sample_save_decision(
@@ -215,7 +214,6 @@ class CliContractTest(unittest.TestCase):
                 "timestamp": "2026-04-03T12:00:00+00:00",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
-                "preserve_mode": "copy",
             }
         ]
         decision_payload = sample_save_decision(
@@ -600,6 +598,57 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("error:", rendered)
         self.assertIn("source binding missing required keys: timestamp", rendered)
+        self.assertNotIn("Traceback", rendered)
+
+    def test_preserve_mode_is_rejected_without_traceback(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "preserve-mode.md"
+        source_path.write_text("Legacy preserve mode.\n")
+        bindings_path = root / "bindings.json"
+        decision_path = root / "decision.json"
+
+        bindings_payload = [
+            {
+                "source_id": "note.legacy.preserve",
+                "local_path": str(source_path),
+                "source_kind": "markdown_doc",
+                "source_family": "other",
+                "timestamp": "2026-04-03T12:00:00+00:00",
+                "preserve_mode": "copy",
+            }
+        ]
+        decision_payload = sample_save_decision(
+            source_ids=["note.legacy.preserve"],
+            topic_path="knowledge-system/legacy-preserve-mode",
+            candidate_title="Legacy Preserve Mode",
+        )
+
+        bindings_path.write_text(json.dumps(bindings_payload))
+        decision_path.write_text(json.dumps(decision_payload))
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "save",
+                    "--json",
+                    "--bindings",
+                    str(bindings_path),
+                    "--decision",
+                    str(decision_path),
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        rendered = stderr.getvalue()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("error:", rendered)
+        self.assertIn("must not include preserve_mode", rendered)
         self.assertNotIn("Traceback", rendered)
 
     def test_trace_not_found_is_reported_without_traceback(self) -> None:

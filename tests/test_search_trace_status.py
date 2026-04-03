@@ -74,6 +74,25 @@ class SearchTraceStatusTest(unittest.TestCase):
                 }
             ],
         )
+        artifact = trace["artifacts_by_source"]["note.alias.trace"]
+        self.assertEqual(artifact["source_record"], trace["source_records"][0])
+        self.assertEqual(artifact["source_family"], "other")
+        self.assertEqual(artifact["source_kind"], "markdown_doc")
+        self.assertEqual(artifact["sensitivity"], "internal")
+        self.assertEqual(artifact["storage_mode"], "copy")
+        self.assertEqual(artifact["primary_artifact_kind"], "copied_file")
+        self.assertEqual(
+            artifact["primary_artifact_path"],
+            "sources/other/note.alias.trace__alias-trace.md",
+        )
+        self.assertEqual(artifact["source_observed_at"], "2026-04-03T12:00:00+00:00")
+        self.assertTrue(artifact["captured_at"])
+        self.assertTrue(artifact["sha256"])
+        self.assertEqual(artifact["render_manifest_path"], None)
+        self.assertEqual(artifact["render_markdown_path"], None)
+        self.assertEqual(artifact["render_asset_paths"], [])
+        self.assertEqual(artifact["render_omission_reason"], None)
+        self.assertEqual(artifact["render_contract_gap"], None)
         with self.assertRaises(ValidationError):
             repo.trace("knowledge-system/multimodal-runtime-validation#does_not_exist")
 
@@ -606,7 +625,6 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_kind="pdf_secret",
             source_family="pdf",
             sensitivity="secret_pointer_only",
-            preserve_mode="pointer",
             timestamp="2026-04-03T12:00:00+00:00",
         )
 
@@ -635,6 +653,13 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertEqual(len(copied_trace["render_manifests"]), 1)
         self.assertEqual(len(copied_trace["render_artifacts"]), 1)
         self.assertEqual(copied_trace["render_omissions"], [])
+        copied_artifact = copied_trace["artifacts_by_source"]["pdf.copied.lesson"]
+        self.assertEqual(copied_artifact["primary_artifact_kind"], "copied_file")
+        self.assertTrue(copied_artifact["primary_artifact_path"].endswith("__copied.pdf"))
+        self.assertEqual(copied_artifact["render_manifest_path"], copied_trace["render_manifests"][0])
+        self.assertIn(copied_artifact["render_markdown_path"], copied_trace["render_artifacts"])
+        self.assertEqual(copied_artifact["render_omission_reason"], None)
+        self.assertEqual(copied_artifact["render_contract_gap"], None)
 
         secret_trace = repo.trace("product/learning-experience/secret-pdf")
         self.assertEqual(secret_trace["render_manifests"], [])
@@ -649,6 +674,12 @@ class SearchTraceStatusTest(unittest.TestCase):
                 }
             ],
         )
+        secret_artifact = secret_trace["artifacts_by_source"]["pdf.secret.lesson"]
+        self.assertEqual(secret_artifact["primary_artifact_kind"], "pointer_record")
+        self.assertTrue(secret_artifact["primary_artifact_path"].endswith(".pointer.json"))
+        self.assertEqual(secret_artifact["render_markdown_path"], None)
+        self.assertEqual(secret_artifact["render_omission_reason"], "disallowed_by_sensitivity")
+        self.assertEqual(secret_artifact["render_contract_gap"], None)
 
         status = repo.status()
         self.assertEqual(status["pdf_rendered_sources"], 1)

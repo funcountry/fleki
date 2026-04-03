@@ -51,7 +51,11 @@ def write_runtime_package(
         raise SystemExit(f"missing runtime source root: {runtime_source_root}")
 
     runtime_root.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(runtime_source_root, runtime_root / "src" / "knowledge_graph")
+    shutil.copytree(
+        runtime_source_root,
+        runtime_root / "src" / "knowledge_graph",
+        ignore=shutil.ignore_patterns("__pycache__", "review_wiki"),
+    )
     (runtime_root / "pyproject.toml").write_text(render_runtime_pyproject(project_metadata))
     (runtime_root / "README.md").write_text(render_runtime_readme())
 
