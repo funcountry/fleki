@@ -1,0 +1,11 @@
+{
+  "authority_tier": "historical_support",
+  "captured_at": "2026-04-03T03:40:53+00:00",
+  "original_path": "/Users/agents/workspace/fleki/docs/phase6_smoke_inputs/codex_semantic_capture.md",
+  "relative_path": "knowledge/sources/other/phase6.smoke.codex.semantic-capture__codex_semantic_capture.md",
+  "sensitivity": "internal",
+  "sha256": "1c168d53045e88838ffc036ab84d37695b2922efc85278a2df82b53a7e720681",
+  "source_id": "phase6.smoke.codex.semantic-capture",
+  "source_kind": "markdown_doc",
+  "storage_mode": "copy"
+}

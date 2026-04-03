@@ -1,0 +1,15 @@
+Saved both sources through the repo-local knowledge contract, using `KnowledgeRepository.apply_save(...)` and leaving implementation code untouched. The PNG was preserved with an honest unreadable-image reading limit (`mixed` mode, IHDR CRC decode failure), and the PDF was preserved as a directly read local PDF.
+
+Receipt path:
+- [knowledge/receipts/save/receipt_agovdd67cmcebqdgq2xxkjv7ye.md](/Users/agents/workspace/fleki/knowledge/receipts/save/receipt_agovdd67cmcebqdgq2xxkjv7ye.md)
+
+Topic paths touched:
+- [knowledge/topics/knowledge-system/multimodal-runtime-validation.md](/Users/agents/workspace/fleki/knowledge/topics/knowledge-system/multimodal-runtime-validation.md)
+
+Provenance note paths:
+- [knowledge/provenance/images/prov_agovdd67cp6pqrtytwur2io2iq.md](/Users/agents/workspace/fleki/knowledge/provenance/images/prov_agovdd67cp6pqrtytwur2io2iq.md)
+- [knowledge/provenance/pdf/prov_agovdd67cp33sbnyphfnc4nxmi.md](/Users/agents/workspace/fleki/knowledge/provenance/pdf/prov_agovdd67cp33sbnyphfnc4nxmi.md)
+
+Source record paths:
+- [knowledge/sources/images/phase6.smoke.multimodal.knowledge-image__knowledge_image_input.png.record.json](/Users/agents/workspace/fleki/knowledge/sources/images/phase6.smoke.multimodal.knowledge-image__knowledge_image_input.png.record.json)
+- [knowledge/sources/pdf/phase6.smoke.multimodal.knowledge-pdf__knowledge_pdf_input.pdf.record.json](/Users/agents/workspace/fleki/knowledge/sources/pdf/phase6.smoke.multimodal.knowledge-pdf__knowledge_pdf_input.pdf.record.json)

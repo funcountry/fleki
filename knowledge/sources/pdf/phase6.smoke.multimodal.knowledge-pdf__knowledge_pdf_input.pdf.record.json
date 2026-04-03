@@ -1,0 +1,11 @@
+{
+  "authority_tier": "historical_support",
+  "captured_at": "2026-04-03T04:17:56+00:00",
+  "original_path": "/Users/agents/workspace/fleki/docs/phase6_smoke_inputs/knowledge_pdf_input.pdf",
+  "relative_path": "knowledge/sources/pdf/phase6.smoke.multimodal.knowledge-pdf__knowledge_pdf_input.pdf",
+  "sensitivity": "internal",
+  "sha256": "4b94fd10dfc995c61442f83ecfcb40341890729f16a2f1db2ab15622ca309dc6",
+  "source_id": "phase6.smoke.multimodal.knowledge-pdf",
+  "source_kind": "pdf_research",
+  "storage_mode": "copy"
+}
