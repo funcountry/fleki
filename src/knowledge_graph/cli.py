@@ -10,7 +10,7 @@ from .authority import LIFECYCLE_STATES
 from .layout import resolve_knowledge_layout
 from .models import RebuildPageUpdate, RebuildPlan, SourceBinding
 from .repository import KnowledgeRepository
-from .validation import ValidationError
+from .validation import SOURCE_FAMILIES, ValidationError, validate_source_family
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -59,7 +59,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     search = subparsers.add_parser("search", help="Search semantic knowledge pages.")
     _add_common_layout_args(search)
-    search.add_argument("query", help="Search query.")
+    search.add_argument(
+        "query",
+        help="Exact ref or literal query for candidate discovery.",
+    )
     search.add_argument("--limit", type=int, default=5, help="Maximum number of results.")
     search.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     search.add_argument(
@@ -68,9 +71,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not write a search receipt.",
     )
 
-    trace = subparsers.add_parser("trace", help="Trace a claim or knowledge ref back to sources.")
+    trace = subparsers.add_parser(
+        "trace",
+        help="Trace an exact knowledge ref back to sources.",
+    )
     _add_common_layout_args(trace)
-    trace.add_argument("ref", help="Knowledge id, current path, or trace ref.")
+    trace.add_argument(
+        "ref",
+        help="Exact ref: knowledge_id, knowledge_id#section_id, current_path, page alias, or current_path#section_alias.",
+    )
     trace.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     trace.add_argument(
         "--no-receipt",
@@ -83,6 +92,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Apply a save decision from JSON inputs.",
         description="Apply a save decision from JSON inputs.",
         epilog=(
+            f'Bindings must include "source_family": {" | ".join(sorted(SOURCE_FAMILIES))}.\n'
             'Bindings may include "timestamp" (ISO 8601 source-observed time).\n'
             "ingest_summary.authority_tier: generated_mirror | historical_support | live_doctrine | mixed | raw_runtime\n"
             "knowledge_units[].authority_posture: live_doctrine | mixed | supported_by_internal_session | supported_by_runtime | tentative\n"
@@ -161,7 +171,8 @@ def _command_search(args: argparse.Namespace) -> int:
     lines = []
     for item in result["results"]:
         lines.append(
-            f"{item['current_path']} authority={item['authority_posture']} "
+            f"{item['current_path']} match_kind={item['match_kind']} "
+            f"authority={item['authority_posture']} "
             f"lifecycle={item['lifecycle_state']} effective={item['effective_lifecycle_state']} "
             f"last_supported_at={item['last_supported_at']} trace_ref={item['trace_ref']}"
         )
@@ -251,10 +262,23 @@ def _build_repo(args: argparse.Namespace) -> KnowledgeRepository:
 def _binding_from_dict(payload: Any) -> SourceBinding:
     if not isinstance(payload, dict):
         raise SystemExit("each source binding must be a JSON object")
+    missing = [
+        key
+        for key in ["source_id", "local_path", "source_kind", "source_family"]
+        if key not in payload
+    ]
+    if missing:
+        raise ValidationError(
+            f"source binding missing required keys: {', '.join(missing)}"
+        )
     return SourceBinding(
         source_id=str(payload["source_id"]),
         local_path=Path(payload["local_path"]),
         source_kind=str(payload["source_kind"]),
+        source_family=validate_source_family(
+            payload.get("source_family"),
+            field_name="source_binding.source_family",
+        ),
         authority_tier=str(payload.get("authority_tier", "historical_support")),
         sensitivity=str(payload.get("sensitivity", "internal")),
         preserve_mode=str(payload.get("preserve_mode", "copy")),

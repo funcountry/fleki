@@ -30,6 +30,16 @@ FORBIDDEN_TOPIC_ROOTS = {
     "sessions",
 }
 
+SOURCE_FAMILIES = {
+    "codex",
+    "hermes",
+    "images",
+    "other",
+    "paperclip",
+    "pdf",
+}
+PROVENANCE_SOURCE_FAMILIES = SOURCE_FAMILIES | {"mixed"}
+
 
 class ValidationError(ValueError):
     pass
@@ -99,6 +109,39 @@ def _validate_topic_path(topic_path: str) -> None:
     if root in FORBIDDEN_TOPIC_ROOTS:
         raise ValidationError(
             f"topic_path root '{root}' is source-family-first and forbidden"
+        )
+
+
+def validate_source_family(
+    value: Any,
+    *,
+    field_name: str,
+    allow_mixed: bool = False,
+) -> str:
+    if value is None or value == "":
+        allowed_values = (
+            PROVENANCE_SOURCE_FAMILIES if allow_mixed else SOURCE_FAMILIES
+        )
+        raise ValidationError(
+            f"{field_name} is required. Allowed values: {_format_allowed_values(allowed_values)}."
+        )
+    rendered = str(value)
+    allowed_values = PROVENANCE_SOURCE_FAMILIES if allow_mixed else SOURCE_FAMILIES
+    if rendered not in allowed_values:
+        _raise_invalid_choice(field_name, rendered, allowed_values)
+    return rendered
+
+
+def validate_source_bindings(source_bindings: Mapping[str, Any]) -> None:
+    for source_id, binding in source_bindings.items():
+        binding_source_id = getattr(binding, "source_id", None)
+        if binding_source_id != source_id:
+            raise ValidationError(
+                "source_bindings keys must match binding.source_id exactly"
+            )
+        validate_source_family(
+            getattr(binding, "source_family", None),
+            field_name=f"source_binding[{source_id}].source_family",
         )
 
 

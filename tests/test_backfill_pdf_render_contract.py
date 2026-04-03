@@ -14,7 +14,6 @@ from knowledge_graph import SourceBinding
 
 def _strip_pdf_render_contract(repo, manifest_path: Path) -> str:
     manifest = json.loads(manifest_path.read_text())
-    manifest.pop("source_family", None)
     render_manifest_path = manifest.pop("render_manifest_relative_path", None)
     render_markdown_path = manifest.pop("render_relative_path", None)
     manifest.pop("render_eligibility", None)
@@ -40,6 +39,7 @@ class BackfillPdfRenderContractTest(unittest.TestCase):
             source_id="pdf.backfill.repair",
             local_path=pdf_path,
             source_kind="pdf_research",
+            source_family="pdf",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -94,6 +94,7 @@ class BackfillPdfRenderContractTest(unittest.TestCase):
             source_id="pdf.backfill.missing",
             local_path=pdf_path,
             source_kind="pdf_research",
+            source_family="pdf",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],

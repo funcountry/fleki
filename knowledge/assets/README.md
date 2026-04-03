@@ -1,3 +1,5 @@
 # Assets
 
-This directory holds derived-only renditions or extracted assets referenced by provenance or topic pages.
+This checked-in directory mirrors derived-only assets as reference content.
+
+The live derived assets live under `<resolved_data_root>/assets/`.

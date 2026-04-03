@@ -2,14 +2,20 @@
 
 ## Storage layers
 
-- `knowledge/topics/**`
+- `<resolved_data_root>/topics/**`
   - primary semantic pages
-- `knowledge/provenance/**`
+- `<resolved_data_root>/provenance/**`
   - source-backed explanation of what each source contributed
-- `knowledge/sources/**`
+- `<resolved_data_root>/sources/**`
   - raw originals or durable pointers
-- `knowledge/receipts/**`
+- `<resolved_data_root>/assets/**`
+  - derived render artifacts or extracted files
+- `<resolved_data_root>/receipts/**`
   - append-only command evidence
+- `<resolved_data_root>/search/**`
+  - optional support state only; not required for correctness
+
+The checked-in repo `knowledge/**` tree is reference content and a migration seed. It is not the live graph root.
 
 ## Identity rules
 
@@ -17,6 +23,8 @@
 - `section_id` is the durable section identity.
 - `source_id` is the immutable source identity.
 - paths are mutable aliases, not the durable identity layer.
+- `knowledge_id#section_id` is the stable machine ref for trace.
+- `current_path#section_alias` is convenience only.
 
 ## Authority rules
 
@@ -27,12 +35,11 @@
 - newer weak support does not outrank stronger doctrine just because it is recent
 - stale or superseded lifecycle state can demote a page without changing its authority posture
 
-## Source-kind normalization
+## Source family
 
-- `pdf*` or `.pdf` routes to `sources/pdf/`
-- `image*` or common image suffixes routes to `sources/images/`
-- `codex*`, `paperclip*`, and `hermes*` route to matching source families
-- everything else, including markdown and plain text, routes to `sources/other/`
+- `source_family` is an explicit binding and manifest field.
+- `source_family` owns source storage placement, provenance-family rollup, and read-side classification.
+- Do not infer `source_family` from `source_kind` or file suffixes.
 
 ## Helper policy
 

@@ -3,6 +3,7 @@
     "source_id": "note.customerio.current",
     "local_path": "/absolute/path/to/customer-io.md",
     "source_kind": "markdown_doc",
+    "source_family": "other",
     "authority_tier": "live_doctrine",
     "timestamp": "2026-04-03T12:00:00+00:00"
   }

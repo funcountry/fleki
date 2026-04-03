@@ -77,20 +77,20 @@ def backfill_pdf_render_contract(
     for entry in entries:
         relative_path = entry["relative_path"]
         manifest = dict(entry["manifest"])
+        gap_reason = None
         if selected and relative_path not in selected:
             continue
         if selected:
             seen_selected.add(relative_path)
-        if repo._manifest_source_family(manifest) != "pdf":
-            skipped_source_records.append(relative_path)
-            continue
-        gap_reason = repo._render_contract_gap_reason(manifest)
-        if gap_reason is None:
-            skipped_source_records.append(relative_path)
-            continue
-
         manifest_path = entry["path"]
         try:
+            if repo._manifest_source_family(manifest) != "pdf":
+                skipped_source_records.append(relative_path)
+                continue
+            gap_reason = repo._render_contract_gap_reason(manifest)
+            if gap_reason is None:
+                skipped_source_records.append(relative_path)
+                continue
             if manifest.get("storage_mode") == "copy":
                 raw_relative_path = manifest.get("relative_path")
                 raw_path = repo.data_root / str(raw_relative_path)
@@ -142,7 +142,7 @@ def backfill_pdf_render_contract(
             errors.append(
                 {
                     "source_record": relative_path,
-                    "gap_reason": str(gap_reason),
+                    "gap_reason": str(gap_reason) if gap_reason is not None else "unknown",
                     "error": str(exc),
                 }
             )

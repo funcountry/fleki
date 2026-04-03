@@ -15,105 +15,49 @@ from knowledge_graph import (
 
 
 class SearchTraceStatusTest(unittest.TestCase):
-    def test_claim_text_trace_filters_to_relevant_provenance(self) -> None:
+    def test_trace_resolves_current_path_section_alias_and_rejects_unknown_fragment(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
 
-        pdf_path = copy_fixture_pdf(root, "claim-trace.pdf")
-        image_path = root / "claim-trace.png"
-        image_path.write_bytes(b"\x89PNG\r\n\x1a\nmock")
-
-        pdf_binding = SourceBinding(
-            source_id="phase6.smoke.multimodal.knowledge-pdf",
-            local_path=pdf_path,
-            source_kind="pdf_research",
+        source_path = root / "alias-trace.md"
+        source_path.write_text("Current understanding for exact trace behavior.\n")
+        binding = SourceBinding(
+            source_id="note.alias.trace",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
         )
-        image_binding = SourceBinding(
-            source_id="phase6.smoke.multimodal.knowledge-image",
-            local_path=image_path,
-            source_kind="image_observation",
-        )
-
         decision = sample_save_decision(
-            source_ids=[pdf_binding.source_id, image_binding.source_id],
+            source_ids=[binding.source_id],
             topic_path="knowledge-system/multimodal-runtime-validation",
             candidate_title="Multimodal Runtime Validation",
-            authority_tier="raw_runtime",
             recommended_scope=["knowledge-system"],
         )
-        decision["source_reading_reports"][0]["reading_mode"] = "direct_local_pdf"
-        decision["source_reading_reports"][1]["reading_mode"] = "direct_local_image"
-        decision["topic_actions"][0]["knowledge_units"] = [
-            {
-                "kind": "fact",
-                "temporal_scope": "time_bound",
-                "target_section": {
-                    "section_id": None,
-                    "heading": "Current Understanding",
-                },
-                "statement": "Direct local PDF ingest worked for the Phase 6 smoke input.",
-                "rationale": "The runtime successfully saved the PDF source.",
-                "authority_posture": "supported_by_runtime",
-                "confidence": "high",
-                "evidence": [
-                    {
-                        "source_id": pdf_binding.source_id,
-                        "locator": "render markdown summary",
-                        "notes": "",
-                    }
-                ],
-            },
-            {
-                "kind": "fact",
-                "temporal_scope": "time_bound",
-                "target_section": {
-                    "section_id": None,
-                    "heading": "Current Understanding",
-                },
-                "statement": "Corrupt image decode failure showed up during the smoke run.",
-                "rationale": "The runtime logged the image failure separately.",
-                "authority_posture": "supported_by_runtime",
-                "confidence": "high",
-                "evidence": [
-                    {
-                        "source_id": image_binding.source_id,
-                        "locator": "image decode error",
-                        "notes": "",
-                    }
-                ],
-            },
-        ]
-        decision["provenance_notes"][0]["summary"] = (
-            "Direct local PDF ingest worked for the Phase 6 smoke input."
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = (
+            "Exact trace should resolve section aliases from stored metadata."
         )
-        decision["provenance_notes"][0]["what_this_source_contributes"] = [
-            "PDF ingest success for the smoke input."
-        ]
-        decision["provenance_notes"][1]["summary"] = (
-            "Corrupt image decode failure showed up during the smoke run."
-        )
-        decision["provenance_notes"][1]["what_this_source_contributes"] = [
-            "Image decode failure details for the smoke run."
+        decision["topic_actions"][0]["knowledge_units"][0]["evidence"] = [
+            {
+                "source_id": binding.source_id,
+                "locator": "line 1",
+                "notes": "",
+            }
         ]
 
-        repo.apply_save(source_bindings=[pdf_binding, image_binding], decision=decision)
+        repo.apply_save(source_bindings=[binding], decision=decision)
 
-        trace = repo.trace("Direct local PDF ingest worked for the Phase 6 smoke input.")
+        trace = repo.trace("knowledge-system/multimodal-runtime-validation#current_understanding")
         self.assertIsNotNone(trace["section_id"])
         self.assertEqual(trace["matched_heading"], "Current Understanding")
         self.assertEqual(
             trace["matched_snippet"],
-            "- Direct local PDF ingest worked for the Phase 6 smoke input.",
+            "- Exact trace should resolve section aliases from stored metadata.",
         )
-        self.assertEqual(trace["matched_evidence_locators"], ["render markdown summary"])
+        self.assertEqual(trace["matched_evidence_locators"], ["line 1"])
         self.assertEqual(len(trace["provenance"]), 1)
-        self.assertIn("/pdf/", trace["provenance"][0])
-        self.assertEqual(
-            trace["source_records"],
-            [
-                "sources/pdf/phase6.smoke.multimodal.knowledge-pdf__claim-trace.pdf.record.json",
-            ],
-        )
+        with self.assertRaises(ValidationError):
+            repo.trace("knowledge-system/multimodal-runtime-validation#does_not_exist")
 
     def test_search_trace_and_status_are_authority_aware(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -128,6 +72,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="doctrine.current.shared",
             local_path=doctrine_source,
             source_kind="markdown_doc",
+            source_family="other",
             authority_tier="live_doctrine",
             timestamp="2026-03-01T10:00:00+00:00",
         )
@@ -135,6 +80,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="codex.session.shared.draft",
             local_path=session_source,
             source_kind="codex_session",
+            source_family="codex",
             authority_tier="historical_support",
             timestamp="2026-04-03T10:00:00+00:00",
         )
@@ -214,12 +160,14 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="note.customerio.actual",
             local_path=actual_source,
             source_kind="markdown_doc",
+            source_family="other",
             timestamp="2026-04-03T11:00:00+00:00",
         )
         noise_binding = SourceBinding(
             source_id="note.customerio.noise",
             local_path=noise_source,
             source_kind="markdown_doc",
+            source_family="other",
             timestamp="2026-04-03T09:00:00+00:00",
         )
 
@@ -259,6 +207,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="repo.readme",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -313,6 +262,38 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertEqual(search["results"][0]["current_path"], "knowledge-system/smoke-repo-readme")
         self.assertEqual(search["results"][0]["snippet"], "- AIM is auth-only.")
 
+    def test_search_returns_exact_current_path_section_alias_candidate(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "exact-search.md"
+        source_path.write_text("Exact current path section alias search.\n")
+
+        binding = SourceBinding(
+            source_id="note.exact.search",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/exact-search-contract",
+            candidate_title="Exact Search Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = (
+            "Exact search should return a section trace ref for current path section aliases."
+        )
+
+        save_result = repo.apply_save(source_bindings=[binding], decision=decision)
+        expected_trace_ref = save_result["touched_page_sections"][0]
+
+        search = repo.search("knowledge-system/exact-search-contract#current_understanding")
+        self.assertEqual(len(search["results"]), 1)
+        self.assertEqual(search["results"][0]["match_kind"], "exact_current_path_section")
+        self.assertEqual(search["results"][0]["trace_ref"], expected_trace_ref)
+
     def test_search_returns_no_results_for_confident_miss(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
@@ -327,6 +308,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="note.known",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -353,6 +335,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="note.known",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -378,6 +361,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="note.known",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -406,11 +390,13 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="pdf.copied.lesson",
             local_path=copied_pdf_path,
             source_kind="pdf_research",
+            source_family="pdf",
         )
         secret_binding = SourceBinding(
             source_id="pdf.secret.lesson",
             local_path=secret_pdf_path,
             source_kind="pdf_secret",
+            source_family="pdf",
             sensitivity="secret_pointer_only",
             preserve_mode="pointer",
         )
@@ -475,12 +461,14 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="note.customerio.legacy",
             local_path=legacy_source,
             source_kind="markdown_doc",
+            source_family="other",
             timestamp="2026-03-01T10:00:00+00:00",
         )
         current_binding = SourceBinding(
             source_id="note.customerio.current",
             local_path=current_source,
             source_kind="markdown_doc",
+            source_family="other",
             timestamp="2026-04-03T10:00:00+00:00",
         )
 
@@ -514,7 +502,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             )
         )
 
-        search = repo.search("Customer.io setup")
+        search = repo.search("Customer.io")
         self.assertEqual(search["results"][0]["current_path"], "product/customer-io/current-setup")
         legacy_result = next(
             item for item in search["results"] if item["current_path"] == "product/customer-io/legacy-setup"
@@ -534,6 +522,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_id="pdf.legacy.gap",
             local_path=pdf_path,
             source_kind="pdf_research",
+            source_family="pdf",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -547,7 +536,6 @@ class SearchTraceStatusTest(unittest.TestCase):
 
         manifest_path = next((repo.data_root / "sources" / "pdf").glob("*.record.json"))
         manifest = json.loads(manifest_path.read_text())
-        manifest.pop("source_family", None)
         render_manifest_path = manifest.pop("render_manifest_relative_path")
         render_markdown_path = manifest.pop("render_relative_path")
         manifest.pop("render_eligibility", None)

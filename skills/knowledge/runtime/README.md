@@ -13,8 +13,13 @@ Persistent-root note:
 - installing or refreshing the CLI does not clear an existing graph
 - the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise
 
+Search/trace contract:
+- `knowledge search` is deterministic candidate discovery; use the returned `trace_ref` as the handoff into trace
+- `knowledge trace` accepts exact refs only: `knowledge_id`, `knowledge_id#section_id`, `current_path`, page alias, or `current_path#section_alias`
+
 Save contract notes:
 - `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path
+- bindings must include `source_family`: `codex`, `hermes`, `images`, `other`, `paperclip`, `pdf`
 - bindings may include `timestamp` as ISO 8601 source-observed time
 - `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`
 - `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`
@@ -34,6 +39,7 @@ Create `bindings.json`:
     "source_id": "note.customerio.current",
     "local_path": "/absolute/path/to/customer-io.md",
     "source_kind": "markdown_doc",
+    "source_family": "other",
     "authority_tier": "live_doctrine",
     "timestamp": "2026-04-03T12:00:00+00:00"
   }

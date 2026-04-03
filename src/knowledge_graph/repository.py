@@ -8,62 +8,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from .authority import authority_rank, merge_authority_postures
+from .authority import merge_authority_postures
 from .frontmatter import dump_frontmatter, split_frontmatter
-from .ids import make_opaque_id, safe_filename, section_key, slugify
+from .ids import make_opaque_id, safe_filename, section_key
 from .layout import resolve_knowledge_layout
 from .models import PdfRenderBundle, RebuildPlan, RebuildPageUpdate, ResolvedKnowledgeLayout, SourceBinding
 from .pdf_render import render_pdf_bundle
-from .text import parse_sections, render_page, tokenize
-from .validation import ValidationError, validate_save_decision
+from .text import parse_sections, render_page
+from .validation import (
+    ValidationError,
+    validate_save_decision,
+    validate_source_bindings,
+    validate_source_family,
+)
 
-RETRIEVAL_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "can",
-    "could",
-    "did",
-    "do",
-    "does",
-    "for",
-    "from",
-    "has",
-    "have",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "my",
-    "not",
-    "of",
-    "on",
-    "or",
-    "our",
-    "should",
-    "so",
-    "such",
-    "that",
-    "the",
-    "their",
-    "then",
-    "there",
-    "these",
-    "this",
-    "those",
-    "to",
-    "was",
-    "were",
-    "will",
-    "with",
-    "would",
-    "your",
+SEARCH_MATCH_KIND_ORDER = {
+    "exact_knowledge_id_section": 0,
+    "exact_current_path_section": 1,
+    "exact_page_alias_section": 2,
+    "exact_knowledge_id": 3,
+    "exact_current_path": 4,
+    "exact_page_alias": 5,
+    "literal_section_line": 6,
+    "literal_section_heading": 7,
+    "literal_page_title": 8,
+    "literal_current_path": 9,
+    "literal_page_alias": 10,
 }
 
 
@@ -137,6 +107,7 @@ class KnowledgeRepository:
     ) -> Dict[str, Any]:
         self.initialize_layout()
         bindings_by_id = {binding.source_id: binding for binding in source_bindings}
+        validate_source_bindings(bindings_by_id)
         validate_save_decision(decision, bindings_by_id, fallback_policy=self.fallback_policy)
         timestamp = self._timestamp()
 
@@ -169,55 +140,28 @@ class KnowledgeRepository:
 
     def search(self, query: str, limit: int = 5, write_receipt: bool = True) -> Dict[str, Any]:
         self.initialize_layout()
-        query_tokens = tokenize(query)
+        query_value = query.strip()
         pages = self._load_topics()
         provenance_map = self._load_provenance_map()
         replacement_paths = self._replacement_paths_by_knowledge_id(pages)
-        results = []
-        for page in pages:
-            score, match_heading, match_section_id, snippet = self._score_page(
-                page=page, query=query, query_tokens=query_tokens
+        if not query_value:
+            results: List[Dict[str, Any]] = []
+        else:
+            results = self._search_exact_matches(
+                query=query_value,
+                pages=pages,
+                provenance_map=provenance_map,
+                replacement_paths=replacement_paths,
             )
-            if score <= 0:
-                continue
-            lifecycle_state = page["metadata"].get("lifecycle_state", "unknown")
-            effective_lifecycle_state = self._effective_lifecycle_state(
-                page, replacement_paths
-            )
-            provenance_refs = self._supporting_provenance_for_section(
-                page_metadata=page["metadata"],
-                section_id=match_section_id,
-            )
-            results.append(
-                {
-                    "knowledge_id": page["metadata"]["knowledge_id"],
-                    "path": self._relative(page["path"]),
-                    "current_path": page["metadata"]["current_path"],
-                    "page_kind": page["metadata"]["page_kind"],
-                    "authority_posture": page["metadata"].get("authority_posture", "tentative"),
-                    "match_heading": match_heading,
-                    "match_section_id": match_section_id,
-                    "snippet": snippet,
-                    "provenance_paths": [
-                        provenance_map[prov_id]["relative_path"]
-                        for prov_id in provenance_refs
-                        if prov_id in provenance_map
-                    ],
-                    "trace_ref": (
-                        f"{page['metadata']['knowledge_id']}#{match_section_id}"
-                        if match_section_id
-                        else page["metadata"]["knowledge_id"]
-                    ),
-                    "score": score,
-                    "lifecycle_state": lifecycle_state,
-                    "effective_lifecycle_state": effective_lifecycle_state,
-                    "last_supported_at": page["metadata"].get("last_supported_at"),
-                }
-            )
-
-        results.sort(key=self._search_sort_key)
+            if not results:
+                results = self._search_literal_matches(
+                    query=query_value,
+                    pages=pages,
+                    provenance_map=provenance_map,
+                    replacement_paths=replacement_paths,
+                )
         payload = {
-            "query": query,
+            "query": query_value,
             "approved_helpers_used": [],
             "results": results[:limit],
         }
@@ -227,8 +171,9 @@ class KnowledgeRepository:
 
     def trace(self, ref: str, write_receipt: bool = True) -> Dict[str, Any]:
         self.initialize_layout()
-        page, section_id, claim_text_match = self._resolve_trace_target(ref)
-        replacement_paths = self._replacement_paths_by_knowledge_id(self._load_topics())
+        pages = self._load_topics()
+        page, section_id = self._resolve_trace_target(ref, pages)
+        replacement_paths = self._replacement_paths_by_knowledge_id(pages)
         provenance_map = self._load_provenance_map()
         matched_heading = None
         matched_snippet = None
@@ -238,29 +183,13 @@ class KnowledgeRepository:
             section_id=section_id,
         )
         relevant_provenance = [entry["provenance_id"] for entry in support_entries]
-        if claim_text_match:
-            matching_support = self._filter_support_for_claim(
-                query=ref,
-                support_entries=support_entries,
-                provenance_map=provenance_map,
-            )
-            if not matching_support:
-                raise ValidationError(f"unable to trace ref: {ref}")
-            matched_evidence_locators = self._dedupe_preserve_order(
-                [entry["locator"] for entry in matching_support if entry.get("locator")]
-            )
-            relevant_provenance = self._dedupe_preserve_order(
-                [entry["provenance_id"] for entry in matching_support]
-            )
-        else:
-            matched_evidence_locators = self._dedupe_preserve_order(
-                [entry["locator"] for entry in support_entries if entry.get("locator")]
-            )
+        matched_evidence_locators = self._dedupe_preserve_order(
+            [entry["locator"] for entry in support_entries if entry.get("locator")]
+        )
         if section_id is not None:
             matched_heading, matched_snippet = self._section_match_fields(
                 page=page,
                 section_id=section_id,
-                query=ref if claim_text_match else None,
             )
         provenance_entries = [provenance_map[prov_id] for prov_id in relevant_provenance if prov_id in provenance_map]
         source_paths = []
@@ -504,7 +433,7 @@ class KnowledgeRepository:
             if not binding.local_path.exists():
                 raise FileNotFoundError(f"source path does not exist: {binding.local_path}")
 
-            family = self._source_family(binding)
+            family = binding.source_family
             destination_dir = root / "sources" / family
             destination_dir.mkdir(parents=True, exist_ok=True)
 
@@ -786,10 +715,17 @@ class KnowledgeRepository:
             section_support = dict(metadata.get("section_support", {}))
             section_temporal = dict(metadata.get("section_temporal", {}))
             authority_values = []
+            section_heading_by_key = self._section_heading_by_key(sections)
 
             for unit in action["knowledge_units"]:
                 heading = unit["target_section"]["heading"]
                 key = section_key(heading)
+                existing_heading = section_heading_by_key.get(key)
+                if existing_heading is not None and existing_heading != heading:
+                    raise ValidationError(
+                        "section headings on the same page must not normalize to the same alias key"
+                    )
+                section_heading_by_key[key] = heading
                 section_id = (
                     unit["target_section"].get("section_id")
                     or section_ids.get(key)
@@ -1214,95 +1150,28 @@ class KnowledgeRepository:
         path = self.data_root / relative_path
         return json.loads(path.read_text())
 
-    def _resolve_trace_target(self, ref: str) -> Tuple[Dict[str, Any], Optional[str], bool]:
-        pages = self._load_topics()
-        page_lookup = {page["metadata"]["knowledge_id"]: page for page in pages}
+    def _resolve_trace_target(
+        self,
+        ref: str,
+        pages: Sequence[Mapping[str, Any]],
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
         ref_value = ref.strip()
-        section_id = None
+        fragment = None
         if "#" in ref_value:
-            ref_value, section_id = ref_value.split("#", 1)
-
-        if ref_value in page_lookup:
-            return page_lookup[ref_value], section_id, False
-
-        for page in pages:
-            aliases = set(page["metadata"].get("aliases", []))
-            aliases.add(page["metadata"]["current_path"])
-            if ref_value in aliases:
-                return page, section_id, False
-
-        if "/" in ref_value:
+            ref_value, fragment = ref_value.split("#", 1)
+        if not ref_value:
             raise ValidationError(f"unable to trace ref: {ref}")
-
-        query_tokens = tokenize(ref_value)
-        matches = []
-        for page in pages:
-            match = self._best_content_match(
-                page=page,
-                query=ref_value,
-                query_tokens=query_tokens,
-            )
-            if match["eligible"] and match["section_id"] is not None:
-                matches.append((int(match["score"]), match["section_id"], page))
-        if not matches:
+        page, _ = self._resolve_page_ref(ref_value, pages)
+        if page is None:
             raise ValidationError(f"unable to trace ref: {ref}")
-        matches.sort(
-            key=lambda item: (
-                item[0],
-                authority_rank(item[2]["metadata"].get("authority_posture", "tentative")),
-                item[2]["metadata"]["current_path"],
-            ),
-            reverse=True,
-        )
-        _, matched_section_id, page = matches[0]
-        return page, matched_section_id or section_id, True
+        section_id = self._resolve_section_fragment(page["metadata"], fragment, ref)
+        return page, section_id
 
     def _find_topic_page_by_knowledge_id(self, knowledge_id: str) -> Optional[Dict[str, Any]]:
         for page in self._load_topics():
             if page["metadata"]["knowledge_id"] == knowledge_id:
                 return page
         return None
-
-    def _score_page(
-        self,
-        *,
-        page: Mapping[str, Any],
-        query: str,
-        query_tokens: List[str],
-    ) -> Tuple[int, Optional[str], Optional[str], str]:
-        best_match = self._best_content_match(
-            page=page,
-            query=query,
-            query_tokens=query_tokens,
-        )
-        if not best_match["eligible"]:
-            return 0, None, None, ""
-        return (
-            int(best_match["score"]),
-            best_match["heading"],
-            best_match["section_id"],
-            str(best_match["snippet"]),
-        )
-
-    def _search_sort_key(self, item: Mapping[str, Any]) -> Tuple[int, int, int, int, float, str]:
-        effective = item["effective_lifecycle_state"]
-        lifecycle = item["lifecycle_state"]
-        demotion_bucket = 0 if effective in {"superseded", "stale"} else 1
-        lifecycle_rank = {
-            "current": 2,
-            "unknown": 1,
-            "historical": 0,
-            "stale": -1,
-            "superseded": -2,
-        }.get(lifecycle, 1)
-        return (
-            -demotion_bucket,
-            -item["score"],
-            -authority_rank(item["authority_posture"]),
-            -lifecycle_rank,
-            -self._timestamp_sort_key(item.get("last_supported_at")),
-            item["current_path"],
-        )
 
     def _effective_lifecycle_state(
         self,
@@ -1386,191 +1255,6 @@ class KnowledgeRepository:
                 provenance_ids.append(provenance_id)
         return provenance_ids
 
-    def _filter_support_for_claim(
-        self,
-        *,
-        query: str,
-        support_entries: Sequence[Mapping[str, Any]],
-        provenance_map: Mapping[str, Mapping[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        query_lower, meaningful_tokens = self._match_query_parts(query)
-        scored: List[Tuple[int, Dict[str, Any]]] = []
-        for entry in support_entries:
-            provenance_id = str(entry["provenance_id"])
-            provenance_entry = provenance_map.get(provenance_id)
-            if provenance_entry is None:
-                continue
-            haystack = " ".join(
-                [
-                    str(entry.get("locator", "")),
-                    str(entry.get("notes", "")),
-                    provenance_entry["body"],
-                ]
-            )
-            score, phrase_hit, token_hits = self._text_match_details(
-                haystack,
-                query_lower,
-                meaningful_tokens,
-            )
-            if self._is_eligible_text_match(
-                phrase_hit=phrase_hit,
-                token_hits=token_hits,
-                token_count=len(meaningful_tokens),
-            ):
-                scored.append((score, dict(entry)))
-        if not scored:
-            return []
-        best_score = max(score for score, _ in scored)
-        return [entry for score, entry in scored if score == best_score]
-
-    def _best_content_match(
-        self,
-        *,
-        page: Mapping[str, Any],
-        query: str,
-        query_tokens: Sequence[str],
-    ) -> Dict[str, Any]:
-        query_lower, meaningful_tokens = self._match_query_parts(query, query_tokens)
-        section_ids = page["metadata"].get("section_ids", {})
-        best_match: Dict[str, Any] = {
-            "eligible": False,
-            "score": 0,
-            "heading": None,
-            "section_id": None,
-            "snippet": page["title"],
-            "kind_rank": 0,
-        }
-
-        def consider(
-            *,
-            text: str,
-            heading: Optional[str],
-            section_id: Optional[str],
-            kind_rank: int,
-        ) -> None:
-            nonlocal best_match
-            score, phrase_hit, token_hits = self._text_match_details(
-                text,
-                query_lower,
-                meaningful_tokens,
-            )
-            eligible = self._is_eligible_text_match(
-                phrase_hit=phrase_hit,
-                token_hits=token_hits,
-                token_count=len(meaningful_tokens),
-            )
-            if not eligible:
-                return
-            candidate = {
-                "eligible": True,
-                "score": score,
-                "heading": heading,
-                "section_id": section_id,
-                "snippet": text,
-                "kind_rank": kind_rank,
-            }
-            if (
-                not best_match["eligible"]
-                or score > best_match["score"]
-                or (
-                    score == best_match["score"]
-                    and kind_rank > best_match["kind_rank"]
-                )
-            ):
-                best_match = candidate
-
-        consider(
-            text=page["title"],
-            heading=None,
-            section_id=None,
-            kind_rank=0,
-        )
-        for heading, section_lines in page["sections"].items():
-            if heading == "Provenance Notes":
-                continue
-            current_section_id = section_ids.get(section_key(heading))
-            consider(
-                text=heading,
-                heading=heading,
-                section_id=current_section_id,
-                kind_rank=1,
-            )
-            for line in section_lines:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                consider(
-                    text=stripped,
-                    heading=heading,
-                    section_id=current_section_id,
-                    kind_rank=2,
-                )
-        return best_match
-
-    def _match_query_parts(
-        self,
-        query: str,
-        query_tokens: Optional[Sequence[str]] = None,
-    ) -> Tuple[str, List[str]]:
-        raw_tokens = list(query_tokens) if query_tokens is not None else tokenize(query)
-        meaningful_tokens: List[str] = []
-        for token in raw_tokens:
-            if token in RETRIEVAL_STOPWORDS:
-                continue
-            if token not in meaningful_tokens:
-                meaningful_tokens.append(token)
-        return query.lower().strip(), meaningful_tokens
-
-    def _text_match_details(
-        self,
-        value: str,
-        query_lower: str,
-        query_tokens: Sequence[str],
-        *,
-        phrase_weight: int = 12,
-        token_weight: int = 4,
-    ) -> Tuple[int, bool, int]:
-        lowered = value.lower()
-        phrase_hit = bool(query_lower and query_lower in lowered)
-        token_hits = sum(1 for token in query_tokens if token in lowered)
-        score = self._text_match_score(
-            value,
-            query_lower,
-            query_tokens,
-            phrase_weight=phrase_weight,
-            token_weight=token_weight,
-        )
-        return score, phrase_hit, token_hits
-
-    def _is_eligible_text_match(
-        self,
-        *,
-        phrase_hit: bool,
-        token_hits: int,
-        token_count: int,
-    ) -> bool:
-        if phrase_hit:
-            return True
-        if token_count <= 0:
-            return False
-        return token_hits >= min(token_count, 3)
-
-    def _text_match_score(
-        self,
-        value: str,
-        query_lower: str,
-        query_tokens: Sequence[str],
-        *,
-        phrase_weight: int = 12,
-        token_weight: int = 4,
-    ) -> int:
-        lowered = value.lower()
-        score = 0
-        if query_lower and query_lower in lowered:
-            score += phrase_weight
-        score += sum(lowered.count(token) * token_weight for token in query_tokens)
-        return score
-
     def _section_support_entries(
         self,
         *,
@@ -1594,34 +1278,273 @@ class KnowledgeRepository:
         *,
         page: Mapping[str, Any],
         section_id: str,
-        query: Optional[str],
     ) -> Tuple[Optional[str], Optional[str]]:
         section_ids = page["metadata"].get("section_ids", {})
         for heading, section_lines in page["sections"].items():
             if section_ids.get(section_key(heading)) != section_id:
                 continue
-            if query:
-                matched_line = heading
-                best_score = -1
-                query_lower, meaningful_tokens = self._match_query_parts(query)
-                for candidate in [heading, *[line.strip() for line in section_lines if line.strip()]]:
-                    score, phrase_hit, token_hits = self._text_match_details(
-                        candidate,
-                        query_lower,
-                        meaningful_tokens,
-                    )
-                    if not self._is_eligible_text_match(
-                        phrase_hit=phrase_hit,
-                        token_hits=token_hits,
-                        token_count=len(meaningful_tokens),
-                    ):
-                        continue
-                    if score > best_score:
-                        best_score = score
-                        matched_line = candidate
-                return heading, matched_line
             return heading, next((line.strip() for line in section_lines if line.strip()), heading)
         return None, None
+
+    def _resolve_page_ref(
+        self,
+        ref_value: str,
+        pages: Sequence[Mapping[str, Any]],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        for page in pages:
+            if ref_value == page["metadata"]["knowledge_id"]:
+                return dict(page), "knowledge_id"
+        for page in pages:
+            if ref_value == page["metadata"]["current_path"]:
+                return dict(page), "current_path"
+        for page in pages:
+            if ref_value in set(page["metadata"].get("aliases", [])):
+                return dict(page), "page_alias"
+        return None, None
+
+    def _resolve_section_fragment(
+        self,
+        page_metadata: Mapping[str, Any],
+        fragment: Optional[str],
+        original_ref: str,
+    ) -> Optional[str]:
+        if fragment is None:
+            return None
+        if not fragment:
+            raise ValidationError(f"unable to trace ref: {original_ref}")
+        section_ids = page_metadata.get("section_ids", {})
+        if fragment in section_ids.values():
+            return fragment
+        if fragment in section_ids:
+            return str(section_ids[fragment])
+        raise ValidationError(f"unable to trace ref: {original_ref}")
+
+    def _search_exact_matches(
+        self,
+        *,
+        query: str,
+        pages: Sequence[Mapping[str, Any]],
+        provenance_map: Mapping[str, Mapping[str, Any]],
+        replacement_paths: Mapping[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        ref_value = query.strip()
+        fragment = None
+        if "#" in ref_value:
+            ref_value, fragment = ref_value.split("#", 1)
+        if not ref_value:
+            return []
+        page, page_ref_kind = self._resolve_page_ref(ref_value, pages)
+        if page is None or page_ref_kind is None:
+            return []
+        try:
+            section_id = self._resolve_section_fragment(page["metadata"], fragment, query)
+        except ValidationError:
+            return []
+        if section_id is not None:
+            matched_heading, matched_snippet = self._section_match_fields(page=page, section_id=section_id)
+            match_kind = {
+                "knowledge_id": "exact_knowledge_id_section",
+                "current_path": "exact_current_path_section",
+                "page_alias": "exact_page_alias_section",
+            }[page_ref_kind]
+            return [
+                self._build_search_result(
+                    page=page,
+                    match_kind=match_kind,
+                    match_heading=matched_heading,
+                    match_section_id=section_id,
+                    snippet=matched_snippet or matched_heading or page["title"],
+                    provenance_map=provenance_map,
+                    replacement_paths=replacement_paths,
+                )
+            ]
+        match_kind = {
+            "knowledge_id": "exact_knowledge_id",
+            "current_path": "exact_current_path",
+            "page_alias": "exact_page_alias",
+        }[page_ref_kind]
+        return [
+            self._build_search_result(
+                page=page,
+                match_kind=match_kind,
+                match_heading=None,
+                match_section_id=None,
+                snippet=page["title"],
+                provenance_map=provenance_map,
+                replacement_paths=replacement_paths,
+            )
+        ]
+
+    def _search_literal_matches(
+        self,
+        *,
+        query: str,
+        pages: Sequence[Mapping[str, Any]],
+        provenance_map: Mapping[str, Mapping[str, Any]],
+        replacement_paths: Mapping[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        query_lower = query.casefold()
+        matches: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for page in pages:
+            if query_lower in page["title"].casefold():
+                self._record_search_candidate(
+                    matches,
+                    self._build_search_result(
+                        page=page,
+                        match_kind="literal_page_title",
+                        match_heading=None,
+                        match_section_id=None,
+                        snippet=page["title"],
+                        provenance_map=provenance_map,
+                        replacement_paths=replacement_paths,
+                    ),
+                )
+            current_path = page["metadata"]["current_path"]
+            if query_lower in current_path.casefold():
+                self._record_search_candidate(
+                    matches,
+                    self._build_search_result(
+                        page=page,
+                        match_kind="literal_current_path",
+                        match_heading=None,
+                        match_section_id=None,
+                        snippet=current_path,
+                        provenance_map=provenance_map,
+                        replacement_paths=replacement_paths,
+                    ),
+                )
+            for alias in page["metadata"].get("aliases", []):
+                if query_lower in str(alias).casefold():
+                    self._record_search_candidate(
+                        matches,
+                        self._build_search_result(
+                            page=page,
+                            match_kind="literal_page_alias",
+                            match_heading=None,
+                            match_section_id=None,
+                            snippet=str(alias),
+                            provenance_map=provenance_map,
+                            replacement_paths=replacement_paths,
+                        ),
+                    )
+            section_ids = page["metadata"].get("section_ids", {})
+            for heading, section_lines in page["sections"].items():
+                if heading == "Provenance Notes":
+                    continue
+                current_section_id = section_ids.get(section_key(heading))
+                if current_section_id is None:
+                    continue
+                if query_lower in heading.casefold():
+                    self._record_search_candidate(
+                        matches,
+                        self._build_search_result(
+                            page=page,
+                            match_kind="literal_section_heading",
+                            match_heading=heading,
+                            match_section_id=current_section_id,
+                            snippet=heading,
+                            provenance_map=provenance_map,
+                            replacement_paths=replacement_paths,
+                        ),
+                    )
+                for line in section_lines:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    if query_lower in stripped.casefold():
+                        self._record_search_candidate(
+                            matches,
+                            self._build_search_result(
+                                page=page,
+                                match_kind="literal_section_line",
+                                match_heading=heading,
+                                match_section_id=current_section_id,
+                                snippet=stripped,
+                                provenance_map=provenance_map,
+                                replacement_paths=replacement_paths,
+                            ),
+                        )
+        return sorted(matches.values(), key=self._search_sort_key)
+
+    def _build_search_result(
+        self,
+        *,
+        page: Mapping[str, Any],
+        match_kind: str,
+        match_heading: Optional[str],
+        match_section_id: Optional[str],
+        snippet: str,
+        provenance_map: Mapping[str, Mapping[str, Any]],
+        replacement_paths: Mapping[str, List[str]],
+    ) -> Dict[str, Any]:
+        lifecycle_state = page["metadata"].get("lifecycle_state", "unknown")
+        effective_lifecycle_state = self._effective_lifecycle_state(page, replacement_paths)
+        provenance_refs = self._supporting_provenance_for_section(
+            page_metadata=page["metadata"],
+            section_id=match_section_id,
+        )
+        return {
+            "knowledge_id": page["metadata"]["knowledge_id"],
+            "path": self._relative(page["path"]),
+            "current_path": page["metadata"]["current_path"],
+            "page_kind": page["metadata"]["page_kind"],
+            "authority_posture": page["metadata"].get("authority_posture", "tentative"),
+            "match_kind": match_kind,
+            "match_heading": match_heading,
+            "match_section_id": match_section_id,
+            "snippet": snippet,
+            "provenance_paths": [
+                provenance_map[prov_id]["relative_path"]
+                for prov_id in provenance_refs
+                if prov_id in provenance_map
+            ],
+            "trace_ref": (
+                f"{page['metadata']['knowledge_id']}#{match_section_id}"
+                if match_section_id
+                else page["metadata"]["knowledge_id"]
+            ),
+            "lifecycle_state": lifecycle_state,
+            "effective_lifecycle_state": effective_lifecycle_state,
+            "last_supported_at": page["metadata"].get("last_supported_at"),
+        }
+
+    def _record_search_candidate(
+        self,
+        matches: Dict[Tuple[str, str], Dict[str, Any]],
+        candidate: Dict[str, Any],
+    ) -> None:
+        key = (
+            candidate["knowledge_id"],
+            candidate["match_section_id"] or "",
+        )
+        existing = matches.get(key)
+        if existing is None or self._search_sort_key(candidate) < self._search_sort_key(existing):
+            matches[key] = candidate
+
+    def _search_sort_key(self, item: Mapping[str, Any]) -> Tuple[int, str, str, str]:
+        return (
+            SEARCH_MATCH_KIND_ORDER[item["match_kind"]],
+            item["current_path"],
+            item["match_section_id"] or "",
+            item["snippet"],
+        )
+
+    def _section_heading_by_key(
+        self,
+        sections: Mapping[str, Sequence[str]],
+    ) -> Dict[str, str]:
+        section_heading_by_key: Dict[str, str] = {}
+        for heading in sections:
+            if heading == "Provenance Notes":
+                continue
+            key = section_key(heading)
+            existing_heading = section_heading_by_key.get(key)
+            if existing_heading is not None and existing_heading != heading:
+                raise ValidationError(
+                    "section headings on the same page must not normalize to the same alias key"
+                )
+            section_heading_by_key[key] = heading
+        return section_heading_by_key
 
     def _find_matching_provenance_note(
         self,
@@ -1761,39 +1684,17 @@ class KnowledgeRepository:
             return "unknown"
         return "mixed"
 
-    def _source_family(self, binding: SourceBinding) -> str:
-        kind = binding.source_kind.lower()
-        suffix = binding.local_path.suffix.lower()
-        if "codex" in kind:
-            return "codex"
-        if "paperclip" in kind:
-            return "paperclip"
-        if "hermes" in kind:
-            return "hermes"
-        if "pdf" in kind or suffix == ".pdf":
-            return "pdf"
-        if "image" in kind or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-            return "images"
-        return "other"
-
     def _manifest_source_family(self, manifest: Mapping[str, Any]) -> str:
-        stored_family = manifest.get("source_family")
-        if stored_family:
-            return str(stored_family)
-        source_kind = str(manifest.get("source_kind", "")).lower()
-        relative_path = str(manifest.get("relative_path", "")).lower()
-        original_path = str(manifest.get("original_path", "")).lower()
-        if "pdf" in source_kind or relative_path.startswith("sources/pdf/") or original_path.endswith(".pdf"):
-            return "pdf"
-        if "image" in source_kind or relative_path.startswith("sources/images/"):
-            return "images"
-        if "codex" in source_kind or relative_path.startswith("sources/codex/"):
-            return "codex"
-        if "paperclip" in source_kind or relative_path.startswith("sources/paperclip/"):
-            return "paperclip"
-        if "hermes" in source_kind or relative_path.startswith("sources/hermes/"):
-            return "hermes"
-        return "other"
+        source_id = str(manifest.get("source_id", "unknown source"))
+        try:
+            return validate_source_family(
+                manifest.get("source_family"),
+                field_name=f"source_record[{source_id}].source_family",
+            )
+        except ValidationError as exc:
+            raise ValidationError(
+                f"{exc} Repair the manifest with scripts/backfill_source_family.py."
+            ) from exc
 
     def _provenance_family(
         self,
@@ -1801,7 +1702,10 @@ class KnowledgeRepository:
         source_records: Mapping[str, Dict[str, Any]],
     ) -> str:
         families = {
-            self._source_family(source_records[source_id]["binding"])
+            validate_source_family(
+                source_records[source_id]["source_family"],
+                field_name=f"source_record[{source_id}].source_family",
+            )
             for source_id in source_ids
         }
         if len(families) == 1:

@@ -17,6 +17,7 @@ The persistent thing we care about is the semantic graph, not the source-family 
 - For PDFs, use direct inspection only when the active runtime surface exposes documented file input.
 - Do not browse the internet.
 - Do not invent helper scripts or harnesses.
+- Each binding must declare `source_family`. Do not infer it from `source_kind` or file suffixes.
 
 ## Required output shape
 

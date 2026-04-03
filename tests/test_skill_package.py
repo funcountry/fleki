@@ -14,6 +14,7 @@ class SkillPackageTest(unittest.TestCase):
         runtime_sync_script = root / "scripts" / "sync_knowledge_runtime.py"
         repo_installer_script = root / "scripts" / "install_knowledge_skill.py"
         backfill_script = root / "scripts" / "backfill_pdf_render_contract.py"
+        source_family_repair_script = root / "scripts" / "backfill_source_family.py"
 
         self.assertTrue(skill_root.exists(), msg=str(skill_root))
         self.assertTrue((skill_root / "SKILL.md").exists())
@@ -46,6 +47,7 @@ class SkillPackageTest(unittest.TestCase):
         self.assertTrue(runtime_sync_script.exists(), msg=str(runtime_sync_script))
         self.assertTrue(repo_installer_script.exists(), msg=str(repo_installer_script))
         self.assertTrue(backfill_script.exists(), msg=str(backfill_script))
+        self.assertTrue(source_family_repair_script.exists(), msg=str(source_family_repair_script))
 
         readme_text = repo_readme.read_text()
         self.assertIn("./install.sh", readme_text)
@@ -81,6 +83,8 @@ class SkillPackageTest(unittest.TestCase):
         self.assertIn("Minimal valid save example", runtime_readme)
         self.assertIn("Create `bindings.json`", runtime_readme)
         self.assertIn("Create `decision.json`", runtime_readme)
+        self.assertIn("bindings must include `source_family`", runtime_readme)
+        self.assertIn("`knowledge trace` accepts exact refs only", runtime_readme)
         self.assertIn("`ingest_summary.authority_tier`", runtime_readme)
         self.assertIn("`knowledge_units[].authority_posture`", runtime_readme)
         self.assertIn('`knowledge_units[].kind`: `fact`', runtime_readme)

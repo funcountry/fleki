@@ -15,6 +15,27 @@ from knowledge_graph.cli import main
 
 
 class CliContractTest(unittest.TestCase):
+    def test_search_help_describes_candidate_discovery(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exit_info:
+                main(["search", "--help"])
+
+        self.assertEqual(exit_info.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("Exact ref or literal query for candidate discovery.", rendered)
+
+    def test_trace_help_describes_exact_refs(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exit_info:
+                main(["trace", "--help"])
+
+        self.assertEqual(exit_info.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("Exact ref: knowledge_id", rendered)
+        self.assertIn("current_path#section_alias", rendered)
+
     def test_save_help_mentions_temporal_contract_and_bundled_readme(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -23,6 +44,7 @@ class CliContractTest(unittest.TestCase):
 
         self.assertEqual(exit_info.exception.code, 0)
         rendered = stdout.getvalue()
+        self.assertIn('Bindings must include "source_family"', rendered)
         self.assertIn('Bindings may include "timestamp"', rendered)
         self.assertIn("ingest_summary.authority_tier", rendered)
         self.assertIn("knowledge_units[].authority_posture", rendered)
@@ -81,6 +103,7 @@ class CliContractTest(unittest.TestCase):
             source_id="note.known",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -126,6 +149,7 @@ class CliContractTest(unittest.TestCase):
                 "source_id": "pdf.cli.subprocess",
                 "local_path": str(pdf_path),
                 "source_kind": "pdf_research",
+                "source_family": "pdf",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
                 "preserve_mode": "copy",
@@ -184,6 +208,7 @@ class CliContractTest(unittest.TestCase):
                 "source_id": "pdf.cli.fixture",
                 "local_path": str(pdf_path),
                 "source_kind": "pdf_research",
+                "source_family": "pdf",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
                 "preserve_mode": "copy",
@@ -219,12 +244,101 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["result"], "applied")
-
         render_markdowns = sorted((repo.data_root / "sources" / "pdf").glob("*.render.md"))
         render_manifests = sorted((repo.data_root / "sources" / "pdf").glob("*.render.manifest.json"))
         self.assertEqual(len(render_markdowns), 1)
         self.assertEqual(len(render_manifests), 1)
         self.assertIn("Semantic knowledge graph smoke PDF", render_markdowns[0].read_text())
+
+    def test_search_human_output_includes_match_kind_and_trace_ref_without_score(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "search.txt"
+        source_path.write_text("AIM is auth-only.\n")
+
+        from knowledge_graph import SourceBinding
+
+        binding = SourceBinding(
+            source_id="note.cli.search",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/cli-search-contract",
+            candidate_title="CLI Search Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = "AIM is auth-only."
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "search",
+                    "AIM is auth-only",
+                    "--no-receipt",
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("match_kind=", rendered)
+        self.assertIn("trace_ref=", rendered)
+        self.assertNotIn("score=", rendered)
+
+    def test_search_json_includes_match_kind_and_omits_score(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "search-json.txt"
+        source_path.write_text("AIM is auth-only.\n")
+
+        from knowledge_graph import SourceBinding
+
+        binding = SourceBinding(
+            source_id="note.cli.search.json",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/cli-search-json-contract",
+            candidate_title="CLI Search JSON Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = "AIM is auth-only."
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "search",
+                    "AIM is auth-only",
+                    "--json",
+                    "--no-receipt",
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertIn("match_kind", payload["results"][0])
+        self.assertNotIn("score", payload["results"][0])
 
     def test_rebuild_plan_parses_lifecycle_and_delete_fields(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -239,6 +353,7 @@ class CliContractTest(unittest.TestCase):
             source_id="codex.session.slack-first",
             local_path=source_path,
             source_kind="codex_session",
+            source_family="codex",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -298,6 +413,7 @@ class CliContractTest(unittest.TestCase):
                 "source_id": "note.invalid",
                 "local_path": str(source_path),
                 "source_kind": "markdown_doc",
+                "source_family": "other",
             }
         ]
         decision_payload = sample_save_decision(
@@ -333,6 +449,54 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("error:", rendered)
         self.assertIn("knowledge_unit.authority_posture is invalid", rendered)
+        self.assertNotIn("Traceback", rendered)
+
+    def test_missing_source_family_is_reported_without_traceback(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "missing-family.md"
+        source_path.write_text("Missing source family.\n")
+        bindings_path = root / "bindings.json"
+        decision_path = root / "decision.json"
+
+        bindings_payload = [
+            {
+                "source_id": "note.missing.family",
+                "local_path": str(source_path),
+                "source_kind": "markdown_doc",
+            }
+        ]
+        decision_payload = sample_save_decision(
+            source_ids=["note.missing.family"],
+            topic_path="knowledge-system/missing-source-family",
+            candidate_title="Missing Source Family",
+        )
+
+        bindings_path.write_text(json.dumps(bindings_payload))
+        decision_path.write_text(json.dumps(decision_payload))
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "save",
+                    "--json",
+                    "--bindings",
+                    str(bindings_path),
+                    "--decision",
+                    str(decision_path),
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        rendered = stderr.getvalue()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("error:", rendered)
+        self.assertIn("source binding missing required keys: source_family", rendered)
         self.assertNotIn("Traceback", rendered)
 
     def test_trace_not_found_is_reported_without_traceback(self) -> None:

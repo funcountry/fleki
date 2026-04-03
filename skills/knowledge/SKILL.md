@@ -1,14 +1,14 @@
 ---
 name: knowledge
 key: fleki/knowledge
-description: "Use the shared semantic markdown knowledge graph to save new source material, search what the company knows, trace claims back to provenance, rebuild affected topics, or inspect graph status. Use when work depends on durable company knowledge or must add new evidence; not for generic repo search, one-off summarization, or direct manual filing."
+description: "Use the shared markdown knowledge graph to save new source material, search what the company knows, trace exact refs back to provenance, rebuild affected topics, or inspect graph status. Use when work depends on durable company knowledge or must add new evidence; not for generic repo search, one-off summarization, or direct manual filing."
 metadata:
   short-description: "Use the shared semantic knowledge graph"
 ---
 
 # Knowledge
 
-Use this skill when the shared company knowledge graph is the right interface, either as the destination for new source material or as the retrieval surface for existing knowledge.
+Use this skill when the shared company knowledge graph is the right interface, either as the destination for new source material or as the navigation surface for existing knowledge.
 
 This skill is about semantic knowledge with provenance, not artifact filing, generic search, or ad hoc note dumping.
 
@@ -42,6 +42,8 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Prefer updating the smallest correct topic set over creating near-duplicates.
 - Canonical graph state may only be mutated through the shared `knowledge` contract. If the repo-local core library is available, use it instead of editing `knowledge/**` by hand.
 - Do not add or rely on helper scripts, helper harnesses, retrieval indexes, or deterministic preprocessors unless Amir has explicitly approved that exact helper.
+- The live graph root is `resolved_data_root`, usually `~/.fleki/knowledge`. The checked-in repo `knowledge/**` tree is reference content and a migration seed, not live mutable truth.
+- `knowledge search` may list exact or literal candidates. `knowledge trace` must follow exact refs only. The agent reads the candidates and does the meaning-making.
 - Treat helper approval as real policy, not a loose flag: the approval must identify the exact helper, point to the Decision Log entry, define scope, and define expiry/timebox.
 - If the approval is a fallback/exception, it is invalid unless the plan/package also sets `fallback_policy: approved` and the Decision Log entry includes a timebox plus removal plan.
 - Cite concrete paths, ids, or provenance notes in answers that depend on graph content.
@@ -66,6 +68,7 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 
 - Treat inputs as source material, not as filing destinations.
 - `knowledge save` is apply-only. There is no preview, validate-only, or dry-run save path.
+- Each binding must declare `source_family`. Do not infer family from `source_kind` or file suffixes.
 - Inspect the local source files directly before making semantic decisions.
 - Preserve the source first and record honest reading limits before filing knowledge.
 - For copied PDFs, treat the structured render bundle as repository-owned evidence that must exist before provenance and topic writes succeed; do not invent or hand-author render metadata in the semantic decision payload.
@@ -78,19 +81,18 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 
 ### `knowledge search`
 
-- Search semantic pages and likely aliases first.
+- Search exact ids, current paths, page aliases, and literal page text.
 - Return zero results on a miss instead of a nearest-looking false positive.
-- Prefer existing knowledge pages and indexes over raw source artifacts.
-- Read semantic pages directly and inspect provenance or raw sources only when needed.
-- Apply authority as a ranking rule, not a decorative note.
-- Freshness sharpens ranking, but it does not override stronger authority by itself.
+- Prefer existing knowledge pages over raw source artifacts.
+- Use the returned `trace_ref` as the handoff into `knowledge trace`.
+- Read candidate pages directly and inspect provenance or raw sources only when needed.
 - Do not return raw `sources/**` as ordinary search hits.
 
 ### `knowledge trace`
 
-- Walk from the claim or locator to the relevant knowledge page, then to provenance notes, then to source records.
-- Best-effort claim text should resolve to the best matching section and the most relevant supporting provenance when the graph has enough evidence to narrow it.
-- If claim text cannot narrow honestly, `trace` should fail instead of returning a page-level guess.
+- Accepted refs are exact only: `knowledge_id`, `knowledge_id#section_id`, `current_path`, page alias, or `current_path#section_alias`.
+- Walk from the exact page or section ref to provenance notes, then to source records.
+- Use `knowledge search` first when you need discovery. Then feed the returned `trace_ref` into `knowledge trace`.
 - For PDF-backed claims, continue the chain to the render manifest and stored render markdown or the explicit omission reason; `trace` is the canonical inspection surface for PDF fidelity state.
 - If a PDF source record predates the render-or-omission contract, surface the `render_contract_gaps` entry and repair it with the repo maintenance script instead of pretending trace is complete.
 - Distinguish live doctrine, supported practice, historical support, and tentative inference.

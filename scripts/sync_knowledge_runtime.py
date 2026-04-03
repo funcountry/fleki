@@ -18,6 +18,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from knowledge_graph.install_targets import sync_tree  # noqa: E402
+from knowledge_graph.validation import SOURCE_FAMILIES  # noqa: E402
 
 
 def main() -> int:
@@ -108,6 +109,7 @@ def render_runtime_pyproject(project_metadata: dict[str, object]) -> str:
 def render_runtime_readme() -> str:
     bindings_example = _render_example_json(EXAMPLES_ROOT / "minimal-save-bindings.json")
     decision_example = _render_example_json(EXAMPLES_ROOT / "minimal-save-decision.json")
+    rendered_families = ", ".join(f"`{family}`" for family in sorted(SOURCE_FAMILIES))
     return (
         "# Fleki Knowledge Runtime\n\n"
         "This directory is the generated Python runtime that ships inside the `knowledge` skill.\n"
@@ -120,8 +122,12 @@ def render_runtime_readme() -> str:
         "Persistent-root note:\n"
         "- installing or refreshing the CLI does not clear an existing graph\n"
         "- the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise\n\n"
+        "Search/trace contract:\n"
+        "- `knowledge search` is deterministic candidate discovery; use the returned `trace_ref` as the handoff into trace\n"
+        "- `knowledge trace` accepts exact refs only: `knowledge_id`, `knowledge_id#section_id`, `current_path`, page alias, or `current_path#section_alias`\n\n"
         "Save contract notes:\n"
         "- `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path\n"
+        f"- bindings must include `source_family`: {rendered_families}\n"
         '- bindings may include `timestamp` as ISO 8601 source-observed time\n'
         "- `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`\n"
         "- `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`\n"
