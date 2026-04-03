@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -9,22 +10,32 @@ from .authority import LIFECYCLE_STATES
 from .layout import resolve_knowledge_layout
 from .models import RebuildPageUpdate, RebuildPlan, SourceBinding
 from .repository import KnowledgeRepository
+from .validation import ValidationError
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
 
-    if args.command == "status":
-        return _command_status(args)
-    if args.command == "search":
-        return _command_search(args)
-    if args.command == "trace":
-        return _command_trace(args)
-    if args.command == "save":
-        return _command_save(args)
-    if args.command == "rebuild":
-        return _command_rebuild(args)
+        if args.command == "status":
+            return _command_status(args)
+        if args.command == "search":
+            return _command_search(args)
+        if args.command == "trace":
+            return _command_trace(args)
+        if args.command == "save":
+            return _command_save(args)
+        if args.command == "rebuild":
+            return _command_rebuild(args)
+    except ValidationError as exc:
+        return _emit_error(str(exc))
+    except FileNotFoundError as exc:
+        return _emit_error(f"file not found: {exc.filename or exc}")
+    except json.JSONDecodeError as exc:
+        return _emit_error(
+            f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        )
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -131,6 +142,7 @@ def _command_status(args: argparse.Namespace) -> int:
             f"historical_topic_count={result['historical_topic_count']}",
             f"stale_topic_count={result['stale_topic_count']}",
             f"superseded_topic_count={result['superseded_topic_count']}",
+            f"missing_lifecycle_state_count={result['missing_lifecycle_state_count']}",
             f"pdf_render_contract_gap_count={result['pdf_render_contract_gap_count']}",
         ),
     )
@@ -165,6 +177,9 @@ def _command_trace(args: argparse.Namespace) -> int:
         return 0
     lines = [
         f"current_path={result['current_path']}",
+        f"matched_heading={result['matched_heading'] or 'none'}",
+        f"matched_snippet={result['matched_snippet'] or 'none'}",
+        f"matched_evidence_locators={','.join(result['matched_evidence_locators']) or 'none'}",
         f"authority_posture={result['authority_posture']}",
         f"lifecycle_state={result['lifecycle_state']}",
         f"effective_lifecycle_state={result['effective_lifecycle_state']}",
@@ -311,6 +326,11 @@ def _emit_payload(payload: dict[str, Any], *, as_json: bool, lines: Iterable[str
         return
     for line in lines:
         print(line)
+
+
+def _emit_error(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

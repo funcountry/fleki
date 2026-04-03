@@ -14,6 +14,7 @@ Persistent-root note:
 - the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise
 
 Save contract notes:
+- `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path
 - bindings may include `timestamp` as ISO 8601 source-observed time
 - `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`
 - `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`

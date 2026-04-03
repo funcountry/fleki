@@ -81,11 +81,15 @@ Search what is already known:
 knowledge search "customer.io"
 ```
 
+If nothing matches, `knowledge search` returns zero results. It should not invent a nearest answer.
+
 Trace a topic back to its sources:
 
 ```bash
 knowledge trace product/customer-io/current-setup --json --no-receipt
 ```
+
+Best-effort claim text trace is stricter than path trace. It should only return a result when it can narrow to a real section and evidence.
 
 Commit a save from local files:
 
@@ -102,6 +106,7 @@ knowledge rebuild --plan rebuild.json --json
 ## Save workflow
 
 `knowledge save` is the semantic write step.
+It applies immediately. There is no preview, validate-only, or dry-run save path.
 
 For a minimal valid save payload, start from the checked-in example templates:
 

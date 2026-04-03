@@ -121,6 +121,7 @@ def render_runtime_readme() -> str:
         "- installing or refreshing the CLI does not clear an existing graph\n"
         "- the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise\n\n"
         "Save contract notes:\n"
+        "- `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path\n"
         '- bindings may include `timestamp` as ISO 8601 source-observed time\n'
         "- `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`\n"
         "- `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`\n"

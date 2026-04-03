@@ -17,6 +17,55 @@ from .pdf_render import render_pdf_bundle
 from .text import parse_sections, render_page, tokenize
 from .validation import ValidationError, validate_save_decision
 
+RETRIEVAL_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "could",
+    "did",
+    "do",
+    "does",
+    "for",
+    "from",
+    "has",
+    "have",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "my",
+    "not",
+    "of",
+    "on",
+    "or",
+    "our",
+    "should",
+    "so",
+    "such",
+    "that",
+    "the",
+    "their",
+    "then",
+    "there",
+    "these",
+    "this",
+    "those",
+    "to",
+    "was",
+    "were",
+    "will",
+    "with",
+    "would",
+    "your",
+}
+
 
 class KnowledgeRepository:
     def __init__(
@@ -178,12 +227,41 @@ class KnowledgeRepository:
 
     def trace(self, ref: str, write_receipt: bool = True) -> Dict[str, Any]:
         self.initialize_layout()
-        page, section_id = self._resolve_trace_target(ref)
+        page, section_id, claim_text_match = self._resolve_trace_target(ref)
         replacement_paths = self._replacement_paths_by_knowledge_id(self._load_topics())
         provenance_map = self._load_provenance_map()
-        relevant_provenance = self._supporting_provenance_for_section(
-            page_metadata=page["metadata"], section_id=section_id
+        matched_heading = None
+        matched_snippet = None
+        matched_evidence_locators: List[str] = []
+        support_entries = self._section_support_entries(
+            page_metadata=page["metadata"],
+            section_id=section_id,
         )
+        relevant_provenance = [entry["provenance_id"] for entry in support_entries]
+        if claim_text_match:
+            matching_support = self._filter_support_for_claim(
+                query=ref,
+                support_entries=support_entries,
+                provenance_map=provenance_map,
+            )
+            if not matching_support:
+                raise ValidationError(f"unable to trace ref: {ref}")
+            matched_evidence_locators = self._dedupe_preserve_order(
+                [entry["locator"] for entry in matching_support if entry.get("locator")]
+            )
+            relevant_provenance = self._dedupe_preserve_order(
+                [entry["provenance_id"] for entry in matching_support]
+            )
+        else:
+            matched_evidence_locators = self._dedupe_preserve_order(
+                [entry["locator"] for entry in support_entries if entry.get("locator")]
+            )
+        if section_id is not None:
+            matched_heading, matched_snippet = self._section_match_fields(
+                page=page,
+                section_id=section_id,
+                query=ref if claim_text_match else None,
+            )
         provenance_entries = [provenance_map[prov_id] for prov_id in relevant_provenance if prov_id in provenance_map]
         source_paths = []
         for entry in provenance_entries:
@@ -240,6 +318,9 @@ class KnowledgeRepository:
             "path": self._relative(page["path"]),
             "current_path": page["metadata"]["current_path"],
             "section_id": section_id,
+            "matched_heading": matched_heading,
+            "matched_snippet": matched_snippet,
+            "matched_evidence_locators": matched_evidence_locators,
             "authority_posture": page["metadata"].get("authority_posture", "tentative"),
             "lifecycle_state": page["metadata"].get("lifecycle_state", "unknown"),
             "effective_lifecycle_state": self._effective_lifecycle_state(
@@ -341,6 +422,12 @@ class KnowledgeRepository:
             for page in pages
             if self._effective_lifecycle_state(page, replacement_paths) == "superseded"
         )
+        missing_lifecycle_state_count = sum(
+            1
+            for page in pages
+            if page["metadata"].get("knowledge_id")
+            and "lifecycle_state" not in page["metadata"]
+        )
 
         payload = {
             "resolved_data_root": str(self.data_root),
@@ -361,6 +448,7 @@ class KnowledgeRepository:
             "historical_topic_count": historical_topic_count,
             "stale_topic_count": stale_topic_count,
             "superseded_topic_count": superseded_topic_count,
+            "missing_lifecycle_state_count": missing_lifecycle_state_count,
             "unresolved_contradictions": conflict_count,
             "last_rebuild": last_rebuild,
             "topic_count": len(pages),
@@ -561,10 +649,7 @@ class KnowledgeRepository:
         }
         note_records: Dict[str, Dict[str, Any]] = {}
         for note in decision["provenance_notes"]:
-            provenance_id = make_opaque_id("prov")
             family = self._provenance_family(note["source_ids"], source_records)
-            path = self.provenance_root / family / f"{provenance_id}.md"
-            path.parent.mkdir(parents=True, exist_ok=True)
 
             approved_helpers = []
             reading_modes = {}
@@ -600,6 +685,7 @@ class KnowledgeRepository:
                 if render_bundle.omission_reason:
                     render_omissions_by_source[source_id] = render_bundle.omission_reason
 
+            provenance_id = make_opaque_id("prov")
             metadata = {
                 "provenance_id": provenance_id,
                 "source_ids": list(note["source_ids"]),
@@ -632,14 +718,24 @@ class KnowledgeRepository:
                     if source_id in pdf_render_bundles
                 },
             )
-            path.write_text(dump_frontmatter(metadata, body))
+            existing_record = self._find_matching_provenance_note(
+                family=family,
+                metadata=metadata,
+                body=body,
+            )
+            if existing_record is None:
+                path = self.provenance_root / family / f"{provenance_id}.md"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(dump_frontmatter(metadata, body))
+                note_records[provenance_id] = {
+                    "provenance_id": provenance_id,
+                    "path": path,
+                    "relative_path": self._relative(path),
+                    "source_ids": list(note["source_ids"]),
+                }
+                continue
 
-            note_records[provenance_id] = {
-                "provenance_id": provenance_id,
-                "path": path,
-                "relative_path": self._relative(path),
-                "source_ids": list(note["source_ids"]),
-            }
+            note_records[existing_record["provenance_id"]] = existing_record
         return note_records
 
     def _apply_topic_actions(
@@ -658,6 +754,16 @@ class KnowledgeRepository:
         touched_sections = []
         touched_topics = []
         page_records = {}
+        provenance_lookup = {
+            provenance_id: record["relative_path"]
+            for provenance_id, record in self._load_provenance_map().items()
+        }
+        provenance_lookup.update(
+            {
+                provenance_id: record["relative_path"]
+                for provenance_id, record in provenance_records.items()
+            }
+        )
 
         for action in decision["topic_actions"]:
             if action["action"] in {"split_suggest", "merge_suggest", "rehome_suggest", "no_change"}:
@@ -668,6 +774,7 @@ class KnowledgeRepository:
             if page_path.exists():
                 metadata, body = split_frontmatter(page_path.read_text())
                 title, sections = parse_sections(body)
+                sections.pop("Provenance Notes", None)
             else:
                 metadata = {}
                 title = action["candidate_title"]
@@ -746,9 +853,9 @@ class KnowledgeRepository:
             provenance_refs = []
             for entries in section_support.values():
                 for entry in entries:
-                    provenance_id = entry["provenance_id"]
-                    if provenance_id in provenance_records:
-                        provenance_refs.append(provenance_records[provenance_id]["relative_path"])
+                    relative_path = provenance_lookup.get(entry["provenance_id"])
+                    if relative_path and relative_path not in provenance_refs:
+                        provenance_refs.append(relative_path)
 
             page_path.write_text(dump_frontmatter(metadata, render_page(title, sections, provenance_refs)))
             page_records[action["topic_path"]] = {
@@ -758,7 +865,7 @@ class KnowledgeRepository:
             }
 
         return {
-            "touched_sections": touched_sections,
+            "touched_sections": self._dedupe_preserve_order(touched_sections),
             "touched_topics": sorted(set(touched_topics)),
             "pages": page_records,
         }
@@ -1107,7 +1214,7 @@ class KnowledgeRepository:
         path = self.data_root / relative_path
         return json.loads(path.read_text())
 
-    def _resolve_trace_target(self, ref: str) -> Tuple[Dict[str, Any], Optional[str]]:
+    def _resolve_trace_target(self, ref: str) -> Tuple[Dict[str, Any], Optional[str], bool]:
         pages = self._load_topics()
         page_lookup = {page["metadata"]["knowledge_id"]: page for page in pages}
         ref_value = ref.strip()
@@ -1116,36 +1223,39 @@ class KnowledgeRepository:
             ref_value, section_id = ref_value.split("#", 1)
 
         if ref_value in page_lookup:
-            return page_lookup[ref_value], section_id
+            return page_lookup[ref_value], section_id, False
 
         for page in pages:
             aliases = set(page["metadata"].get("aliases", []))
             aliases.add(page["metadata"]["current_path"])
             if ref_value in aliases:
-                return page, section_id
+                return page, section_id, False
 
-        lowered = ref.lower()
+        if "/" in ref_value:
+            raise ValidationError(f"unable to trace ref: {ref}")
+
+        query_tokens = tokenize(ref_value)
         matches = []
         for page in pages:
-            haystack = " ".join(
-                [
-                    page["title"],
-                    page["metadata"]["current_path"],
-                    " ".join(sum(page["sections"].values(), [])),
-                ]
-            ).lower()
-            if lowered in haystack:
-                matches.append(page)
+            match = self._best_content_match(
+                page=page,
+                query=ref_value,
+                query_tokens=query_tokens,
+            )
+            if match["eligible"] and match["section_id"] is not None:
+                matches.append((int(match["score"]), match["section_id"], page))
         if not matches:
             raise ValidationError(f"unable to trace ref: {ref}")
         matches.sort(
-            key=lambda page: (
-                authority_rank(page["metadata"].get("authority_posture", "tentative")),
-                page["metadata"]["current_path"],
+            key=lambda item: (
+                item[0],
+                authority_rank(item[2]["metadata"].get("authority_posture", "tentative")),
+                item[2]["metadata"]["current_path"],
             ),
             reverse=True,
         )
-        return matches[0], section_id
+        _, matched_section_id, page = matches[0]
+        return page, matched_section_id or section_id, True
 
     def _find_topic_page_by_knowledge_id(self, knowledge_id: str) -> Optional[Dict[str, Any]]:
         for page in self._load_topics():
@@ -1160,60 +1270,19 @@ class KnowledgeRepository:
         query: str,
         query_tokens: List[str],
     ) -> Tuple[int, Optional[str], Optional[str], str]:
-        query_lower = query.lower()
-        current_path = page["metadata"]["current_path"].lower()
-        aliases = " ".join(page["metadata"].get("aliases", [])).lower()
-        title = page["title"]
-        title_lower = title.lower()
-        meaningful_sections = {
-            heading: section_lines
-            for heading, section_lines in page["sections"].items()
-            if heading != "Provenance Notes"
-        }
-        section_text = " ".join(
-            line
-            for lines in meaningful_sections.values()
-            for line in lines
-        ).lower()
-        haystack = " ".join([current_path, aliases, title_lower, section_text])
-        if query_lower not in haystack and not any(token in haystack for token in query_tokens):
+        best_match = self._best_content_match(
+            page=page,
+            query=query,
+            query_tokens=query_tokens,
+        )
+        if not best_match["eligible"]:
             return 0, None, None, ""
-
-        page_score = 0
-        if query_lower in title_lower:
-            page_score += 20
-        if query_lower in section_text:
-            page_score += 12
-        if query_lower in aliases:
-            page_score += 6
-        if query_lower in current_path:
-            page_score += 4
-        page_score += title_lower.count(query_lower) * 6
-        page_score += sum(title_lower.count(token) * 4 for token in query_tokens)
-        page_score += sum(section_text.count(token) * 3 for token in query_tokens)
-        page_score += sum(aliases.count(token) * 2 for token in query_tokens)
-        page_score += sum(current_path.count(token) for token in query_tokens)
-
-        best_heading = None
-        best_section_id = None
-        best_snippet = title
-        best_section_score = -1
-        section_ids = page["metadata"].get("section_ids", {})
-        for heading, section_lines in meaningful_sections.items():
-            section_text = " ".join(section_lines).lower()
-            score = sum(section_text.count(token) for token in query_tokens)
-            if heading.lower().find(query_lower) != -1:
-                score += 5
-            if score > best_section_score:
-                best_section_score = score
-                best_heading = heading
-                best_snippet = next(
-                    (line for line in section_lines if line.strip()),
-                    heading,
-                )
-                best_section_id = section_ids.get(section_key(heading))
-
-        return page_score + max(best_section_score, 0), best_heading, best_section_id, best_snippet
+        return (
+            int(best_match["score"]),
+            best_match["heading"],
+            best_match["section_id"],
+            str(best_match["snippet"]),
+        )
 
     def _search_sort_key(self, item: Mapping[str, Any]) -> Tuple[int, int, int, int, float, str]:
         effective = item["effective_lifecycle_state"]
@@ -1317,6 +1386,281 @@ class KnowledgeRepository:
                 provenance_ids.append(provenance_id)
         return provenance_ids
 
+    def _filter_support_for_claim(
+        self,
+        *,
+        query: str,
+        support_entries: Sequence[Mapping[str, Any]],
+        provenance_map: Mapping[str, Mapping[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        query_lower, meaningful_tokens = self._match_query_parts(query)
+        scored: List[Tuple[int, Dict[str, Any]]] = []
+        for entry in support_entries:
+            provenance_id = str(entry["provenance_id"])
+            provenance_entry = provenance_map.get(provenance_id)
+            if provenance_entry is None:
+                continue
+            haystack = " ".join(
+                [
+                    str(entry.get("locator", "")),
+                    str(entry.get("notes", "")),
+                    provenance_entry["body"],
+                ]
+            )
+            score, phrase_hit, token_hits = self._text_match_details(
+                haystack,
+                query_lower,
+                meaningful_tokens,
+            )
+            if self._is_eligible_text_match(
+                phrase_hit=phrase_hit,
+                token_hits=token_hits,
+                token_count=len(meaningful_tokens),
+            ):
+                scored.append((score, dict(entry)))
+        if not scored:
+            return []
+        best_score = max(score for score, _ in scored)
+        return [entry for score, entry in scored if score == best_score]
+
+    def _best_content_match(
+        self,
+        *,
+        page: Mapping[str, Any],
+        query: str,
+        query_tokens: Sequence[str],
+    ) -> Dict[str, Any]:
+        query_lower, meaningful_tokens = self._match_query_parts(query, query_tokens)
+        section_ids = page["metadata"].get("section_ids", {})
+        best_match: Dict[str, Any] = {
+            "eligible": False,
+            "score": 0,
+            "heading": None,
+            "section_id": None,
+            "snippet": page["title"],
+            "kind_rank": 0,
+        }
+
+        def consider(
+            *,
+            text: str,
+            heading: Optional[str],
+            section_id: Optional[str],
+            kind_rank: int,
+        ) -> None:
+            nonlocal best_match
+            score, phrase_hit, token_hits = self._text_match_details(
+                text,
+                query_lower,
+                meaningful_tokens,
+            )
+            eligible = self._is_eligible_text_match(
+                phrase_hit=phrase_hit,
+                token_hits=token_hits,
+                token_count=len(meaningful_tokens),
+            )
+            if not eligible:
+                return
+            candidate = {
+                "eligible": True,
+                "score": score,
+                "heading": heading,
+                "section_id": section_id,
+                "snippet": text,
+                "kind_rank": kind_rank,
+            }
+            if (
+                not best_match["eligible"]
+                or score > best_match["score"]
+                or (
+                    score == best_match["score"]
+                    and kind_rank > best_match["kind_rank"]
+                )
+            ):
+                best_match = candidate
+
+        consider(
+            text=page["title"],
+            heading=None,
+            section_id=None,
+            kind_rank=0,
+        )
+        for heading, section_lines in page["sections"].items():
+            if heading == "Provenance Notes":
+                continue
+            current_section_id = section_ids.get(section_key(heading))
+            consider(
+                text=heading,
+                heading=heading,
+                section_id=current_section_id,
+                kind_rank=1,
+            )
+            for line in section_lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                consider(
+                    text=stripped,
+                    heading=heading,
+                    section_id=current_section_id,
+                    kind_rank=2,
+                )
+        return best_match
+
+    def _match_query_parts(
+        self,
+        query: str,
+        query_tokens: Optional[Sequence[str]] = None,
+    ) -> Tuple[str, List[str]]:
+        raw_tokens = list(query_tokens) if query_tokens is not None else tokenize(query)
+        meaningful_tokens: List[str] = []
+        for token in raw_tokens:
+            if token in RETRIEVAL_STOPWORDS:
+                continue
+            if token not in meaningful_tokens:
+                meaningful_tokens.append(token)
+        return query.lower().strip(), meaningful_tokens
+
+    def _text_match_details(
+        self,
+        value: str,
+        query_lower: str,
+        query_tokens: Sequence[str],
+        *,
+        phrase_weight: int = 12,
+        token_weight: int = 4,
+    ) -> Tuple[int, bool, int]:
+        lowered = value.lower()
+        phrase_hit = bool(query_lower and query_lower in lowered)
+        token_hits = sum(1 for token in query_tokens if token in lowered)
+        score = self._text_match_score(
+            value,
+            query_lower,
+            query_tokens,
+            phrase_weight=phrase_weight,
+            token_weight=token_weight,
+        )
+        return score, phrase_hit, token_hits
+
+    def _is_eligible_text_match(
+        self,
+        *,
+        phrase_hit: bool,
+        token_hits: int,
+        token_count: int,
+    ) -> bool:
+        if phrase_hit:
+            return True
+        if token_count <= 0:
+            return False
+        return token_hits >= min(token_count, 3)
+
+    def _text_match_score(
+        self,
+        value: str,
+        query_lower: str,
+        query_tokens: Sequence[str],
+        *,
+        phrase_weight: int = 12,
+        token_weight: int = 4,
+    ) -> int:
+        lowered = value.lower()
+        score = 0
+        if query_lower and query_lower in lowered:
+            score += phrase_weight
+        score += sum(lowered.count(token) * token_weight for token in query_tokens)
+        return score
+
+    def _section_support_entries(
+        self,
+        *,
+        page_metadata: Mapping[str, Any],
+        section_id: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        if section_id is None:
+            provenance_ids = self._supporting_provenance_for_section(
+                page_metadata=page_metadata,
+                section_id=None,
+            )
+            return [{"provenance_id": provenance_id} for provenance_id in provenance_ids]
+        return [
+            dict(entry)
+            for entry in page_metadata.get("section_support", {}).get(section_id, [])
+            if isinstance(entry, dict)
+        ]
+
+    def _section_match_fields(
+        self,
+        *,
+        page: Mapping[str, Any],
+        section_id: str,
+        query: Optional[str],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        section_ids = page["metadata"].get("section_ids", {})
+        for heading, section_lines in page["sections"].items():
+            if section_ids.get(section_key(heading)) != section_id:
+                continue
+            if query:
+                matched_line = heading
+                best_score = -1
+                query_lower, meaningful_tokens = self._match_query_parts(query)
+                for candidate in [heading, *[line.strip() for line in section_lines if line.strip()]]:
+                    score, phrase_hit, token_hits = self._text_match_details(
+                        candidate,
+                        query_lower,
+                        meaningful_tokens,
+                    )
+                    if not self._is_eligible_text_match(
+                        phrase_hit=phrase_hit,
+                        token_hits=token_hits,
+                        token_count=len(meaningful_tokens),
+                    ):
+                        continue
+                    if score > best_score:
+                        best_score = score
+                        matched_line = candidate
+                return heading, matched_line
+            return heading, next((line.strip() for line in section_lines if line.strip()), heading)
+        return None, None
+
+    def _find_matching_provenance_note(
+        self,
+        *,
+        family: str,
+        metadata: Mapping[str, Any],
+        body: str,
+    ) -> Optional[Dict[str, Any]]:
+        provenance_dir = self.provenance_root / family
+        if not provenance_dir.exists():
+            return None
+        stable_metadata = self._stable_provenance_metadata(metadata)
+        for path in provenance_dir.rglob("*.md"):
+            try:
+                existing_metadata, existing_body = split_frontmatter(path.read_text())
+            except Exception:
+                continue
+            if existing_body != body:
+                continue
+            if self._stable_provenance_metadata(existing_metadata) != stable_metadata:
+                continue
+            provenance_id = existing_metadata.get("provenance_id")
+            if not provenance_id:
+                continue
+            return {
+                "provenance_id": provenance_id,
+                "path": path,
+                "relative_path": self._relative(path),
+                "source_ids": list(existing_metadata.get("source_ids", [])),
+            }
+        return None
+
+    def _stable_provenance_metadata(self, metadata: Mapping[str, Any]) -> Dict[str, Any]:
+        return {
+            key: value
+            for key, value in metadata.items()
+            if key not in {"provenance_id", "created_at", "captured_at_by_source"}
+        }
+
     def _render_provenance_body(
         self,
         note: Mapping[str, Any],
@@ -1391,6 +1735,13 @@ class KnowledgeRepository:
             return datetime.fromisoformat(rendered).timestamp()
         except ValueError:
             return 0.0
+
+    def _dedupe_preserve_order(self, items: Sequence[str]) -> List[str]:
+        ordered: List[str] = []
+        for item in items:
+            if item not in ordered:
+                ordered.append(item)
+        return ordered
 
     def _rollup_temporal_scope(
         self,

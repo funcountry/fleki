@@ -8,6 +8,8 @@ Artifacts go in, semantic knowledge plus provenance come out.
 
 The persistent thing we care about is the semantic graph, not the source-family filing system.
 
+`knowledge save` applies immediately. There is no preview, validate-only, or dry-run save path in this workflow.
+
 ## Required input posture
 
 - Inspect the provided local files directly.
