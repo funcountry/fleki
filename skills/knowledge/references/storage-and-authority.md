@@ -25,6 +25,7 @@ The checked-in repo `knowledge/**` tree is reference content and a migration see
 - paths are mutable aliases, not the durable identity layer.
 - `knowledge_id#section_id` is the stable machine ref for trace.
 - `current_path#section_alias` is convenience only.
+- section-alias input accepts deterministic normalization like underscores, hyphens, or heading text, but nothing broader.
 
 ## Authority rules
 
@@ -40,6 +41,7 @@ The checked-in repo `knowledge/**` tree is reference content and a migration see
 - `source_family` is an explicit binding and manifest field.
 - `source_family` owns source storage placement, provenance-family rollup, and read-side classification.
 - Do not infer `source_family` from `source_kind` or file suffixes.
+- `source_observed_at` comes from the required binding `timestamp`. The app does not infer it from document body text.
 
 ## Helper policy
 

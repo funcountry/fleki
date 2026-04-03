@@ -43,7 +43,8 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Canonical graph state may only be mutated through the shared `knowledge` contract. If the repo-local core library is available, use it instead of editing `knowledge/**` by hand.
 - Do not add or rely on helper scripts, helper harnesses, retrieval indexes, or deterministic preprocessors unless Amir has explicitly approved that exact helper.
 - The live graph root is `resolved_data_root`, usually `~/.fleki/knowledge`. The checked-in repo `knowledge/**` tree is reference content and a migration seed, not live mutable truth.
-- `knowledge search` may list exact or literal candidates. `knowledge trace` must follow exact refs only. The agent reads the candidates and does the meaning-making.
+- `knowledge search` may list exact or literal candidates. It does not do paraphrase lookup, token splitting, or best-guess retrieval.
+- `knowledge trace` must follow exact refs only. The agent reads the candidates and does the meaning-making.
 - Treat helper approval as real policy, not a loose flag: the approval must identify the exact helper, point to the Decision Log entry, define scope, and define expiry/timebox.
 - If the approval is a fallback/exception, it is invalid unless the plan/package also sets `fallback_policy: approved` and the Decision Log entry includes a timebox plus removal plan.
 - Cite concrete paths, ids, or provenance notes in answers that depend on graph content.
@@ -69,6 +70,8 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Treat inputs as source material, not as filing destinations.
 - `knowledge save` is apply-only. There is no preview, validate-only, or dry-run save path.
 - Each binding must declare `source_family`. Do not infer family from `source_kind` or file suffixes.
+- Each binding must declare `timestamp` as ISO 8601 source-observed time.
+- If source-observed time is unknown, stop and say that plainly instead of inventing one.
 - Inspect the local source files directly before making semantic decisions.
 - Preserve the source first and record honest reading limits before filing knowledge.
 - For copied PDFs, treat the structured render bundle as repository-owned evidence that must exist before provenance and topic writes succeed; do not invent or hand-author render metadata in the semantic decision payload.
@@ -82,6 +85,7 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 ### `knowledge search`
 
 - Search exact ids, current paths, page aliases, and literal page text.
+- Keep search expectations literal. Rewrite the query around exact page text, paths, aliases, or headings instead of expecting semantic paraphrase rescue.
 - Return zero results on a miss instead of a nearest-looking false positive.
 - Prefer existing knowledge pages over raw source artifacts.
 - Use the returned `trace_ref` as the handoff into `knowledge trace`.
@@ -91,8 +95,10 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 ### `knowledge trace`
 
 - Accepted refs are exact only: `knowledge_id`, `knowledge_id#section_id`, `current_path`, page alias, or `current_path#section_alias`.
+- Section aliases accept deterministic normalization only. `current_understanding`, `current-understanding`, and `Current Understanding` resolve to the same stored alias key.
 - Walk from the exact page or section ref to provenance notes, then to source records.
 - Use `knowledge search` first when you need discovery. Then feed the returned `trace_ref` into `knowledge trace`.
+- Page-level trace does not guess a best section. Read the returned `supported_sections` list and follow the exact section ref you need.
 - For PDF-backed claims, continue the chain to the render manifest and stored render markdown or the explicit omission reason; `trace` is the canonical inspection surface for PDF fidelity state.
 - If a PDF source record predates the render-or-omission contract, surface the `render_contract_gaps` entry and repair it with the repo maintenance script instead of pretending trace is complete.
 - Distinguish live doctrine, supported practice, historical support, and tentative inference.
@@ -109,6 +115,7 @@ Use the dated host capability snapshot in the canonical architecture plan for cu
 - Report the specific subsystem or topic area under discussion, not a vague global reassurance.
 - Highlight the most decision-relevant next action when status reveals drift or backlog.
 - Surface missing lifecycle metadata when older pages still have not been normalized.
+- Distinguish unread content from operator caveats. `ingests_with_reading_limits` is for missing or unread content; `ingests_with_confidence_caveats` is for confidence notes that do not imply unread content.
 - Treat `recent_topics` and `recent_source_ingests` as the primary recentness view once they are available; receipts and indexes are supporting evidence.
 - Treat `status` as graph truth, not as a runtime-install health check.
 

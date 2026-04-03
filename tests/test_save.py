@@ -127,6 +127,7 @@ class SaveWorkflowTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],

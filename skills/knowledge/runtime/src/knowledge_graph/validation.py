@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, Mapping
 
 from .authority import (
@@ -132,6 +133,26 @@ def validate_source_family(
     return rendered
 
 
+def validate_source_timestamp(
+    value: Any,
+    *,
+    field_name: str,
+    required: bool = True,
+) -> str | None:
+    if value in {None, ""}:
+        if required:
+            raise ValidationError(
+                f"{field_name} is required. Provide ISO 8601 source-observed time."
+            )
+        return None
+    rendered = str(value)
+    try:
+        datetime.fromisoformat(rendered.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValidationError(f"{field_name} must be valid ISO 8601: {rendered!r}") from exc
+    return rendered
+
+
 def validate_source_bindings(source_bindings: Mapping[str, Any]) -> None:
     for source_id, binding in source_bindings.items():
         binding_source_id = getattr(binding, "source_id", None)
@@ -142,6 +163,10 @@ def validate_source_bindings(source_bindings: Mapping[str, Any]) -> None:
         validate_source_family(
             getattr(binding, "source_family", None),
             field_name=f"source_binding[{source_id}].source_family",
+        )
+        validate_source_timestamp(
+            getattr(binding, "timestamp", None),
+            field_name=f"source_binding[{source_id}].timestamp",
         )
 
 

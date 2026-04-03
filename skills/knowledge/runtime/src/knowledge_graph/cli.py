@@ -10,7 +10,12 @@ from .authority import LIFECYCLE_STATES
 from .layout import resolve_knowledge_layout
 from .models import RebuildPageUpdate, RebuildPlan, SourceBinding
 from .repository import KnowledgeRepository
-from .validation import SOURCE_FAMILIES, ValidationError, validate_source_family
+from .validation import (
+    SOURCE_FAMILIES,
+    ValidationError,
+    validate_source_family,
+    validate_source_timestamp,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -78,7 +83,10 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_common_layout_args(trace)
     trace.add_argument(
         "ref",
-        help="Exact ref: knowledge_id, knowledge_id#section_id, current_path, page alias, or current_path#section_alias.",
+        help=(
+            "Exact ref: knowledge_id, knowledge_id#section_id, current_path, page alias, "
+            "or current_path#section_alias. Section aliases accept deterministic heading normalization."
+        ),
     )
     trace.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     trace.add_argument(
@@ -93,7 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Apply a save decision from JSON inputs.",
         epilog=(
             f'Bindings must include "source_family": {" | ".join(sorted(SOURCE_FAMILIES))}.\n'
-            'Bindings may include "timestamp" (ISO 8601 source-observed time).\n'
+            'Bindings must include "timestamp" (ISO 8601 source-observed time).\n'
             "ingest_summary.authority_tier: generated_mirror | historical_support | live_doctrine | mixed | raw_runtime\n"
             "knowledge_units[].authority_posture: live_doctrine | mixed | supported_by_internal_session | supported_by_runtime | tentative\n"
             "knowledge_units[].kind: fact | principle | playbook | decision | pattern | regression | glossary | question\n"
@@ -153,6 +161,7 @@ def _command_status(args: argparse.Namespace) -> int:
             f"stale_topic_count={result['stale_topic_count']}",
             f"superseded_topic_count={result['superseded_topic_count']}",
             f"missing_lifecycle_state_count={result['missing_lifecycle_state_count']}",
+            f"ingests_with_confidence_caveats={result['ingests_with_confidence_caveats']}",
             f"pdf_render_contract_gap_count={result['pdf_render_contract_gap_count']}",
         ),
     )
@@ -191,6 +200,14 @@ def _command_trace(args: argparse.Namespace) -> int:
         f"matched_heading={result['matched_heading'] or 'none'}",
         f"matched_snippet={result['matched_snippet'] or 'none'}",
         f"matched_evidence_locators={','.join(result['matched_evidence_locators']) or 'none'}",
+        "supported_sections="
+        + (
+            ",".join(
+                f"{item['trace_ref']}:{item['heading']}"
+                for item in result["supported_sections"]
+            )
+            or "none"
+        ),
         f"authority_posture={result['authority_posture']}",
         f"lifecycle_state={result['lifecycle_state']}",
         f"effective_lifecycle_state={result['effective_lifecycle_state']}",
@@ -264,7 +281,7 @@ def _binding_from_dict(payload: Any) -> SourceBinding:
         raise SystemExit("each source binding must be a JSON object")
     missing = [
         key
-        for key in ["source_id", "local_path", "source_kind", "source_family"]
+        for key in ["source_id", "local_path", "source_kind", "source_family", "timestamp"]
         if key not in payload
     ]
     if missing:
@@ -282,7 +299,10 @@ def _binding_from_dict(payload: Any) -> SourceBinding:
         authority_tier=str(payload.get("authority_tier", "historical_support")),
         sensitivity=str(payload.get("sensitivity", "internal")),
         preserve_mode=str(payload.get("preserve_mode", "copy")),
-        timestamp=_optional_string(payload.get("timestamp")),
+        timestamp=validate_source_timestamp(
+            payload.get("timestamp"),
+            field_name="source_binding.timestamp",
+        ),
         notes=_optional_string(payload.get("notes")),
     )
 

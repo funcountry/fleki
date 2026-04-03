@@ -18,6 +18,7 @@ The persistent thing we care about is the semantic graph, not the source-family 
 - Do not browse the internet.
 - Do not invent helper scripts or harnesses.
 - Each binding must declare `source_family`. Do not infer it from `source_kind` or file suffixes.
+- Each binding must declare `timestamp` as ISO 8601 source-observed time.
 
 ## Required output shape
 
@@ -61,7 +62,7 @@ Return an ingestion decision that includes:
   - `glossary`
   - `question`
 
-- Each binding object may include `timestamp` as ISO 8601 source-observed time.
+- Each binding object must include `timestamp` as ISO 8601 source-observed time.
 - Each knowledge unit may include `temporal_scope`:
   - `evergreen`
   - `time_bound`
@@ -76,7 +77,7 @@ Return an ingestion decision that includes:
 - Every source must have a reading report.
 - Every non-trivial knowledge unit must have evidence.
 - Use `fact` for plain observations unless a stronger semantic kind fits better.
-- Unknown time should stay unknown. Do not invent `current` or a made-up source-observed timestamp.
+- If source-observed time is unknown, stop and say so plainly. Do not invent `current` or a made-up source-observed timestamp.
 - Topic paths must be semantic, never source-family-first.
 - Provenance notes must be one-per-source or explicitly bundled with rationale.
 - Helper approvals must be exact, explicit, and timeboxed.

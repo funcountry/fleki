@@ -65,6 +65,7 @@ Look for these fields in the output:
 - `resolved_data_root`
 - `install_manifest_path`
 - `recent_topics`
+- `ingests_with_confidence_caveats`
 - `pdf_render_contract_gap_count`
 
 ## Quick start
@@ -97,6 +98,10 @@ Public `trace` inputs are exact refs only:
 - page alias
 - `current_path#section_alias`
 
+Section aliases use deterministic normalization only. `current_understanding`, `current-understanding`, and `Current Understanding` resolve to the same stored alias. `knowledge_id#section_id` remains the stable machine ref.
+
+Page-level `knowledge trace <page>` does not guess a best section. It returns aggregate page lineage plus a `supported_sections` summary so the agent can inspect the exact section refs.
+
 Commit a save from local files:
 
 ```bash
@@ -124,7 +129,8 @@ A few usage-critical rules:
 - Use `fact` for plain observations unless another kind adds stronger semantic meaning.
 - `ingest_summary.authority_tier` and `knowledge_units[].authority_posture` are different enums. Do not swap them.
 - Each binding must declare `source_family`. Do not make the app infer it from `source_kind` or file suffixes.
-- `timestamp` is optional and records source-observed time.
+- Each binding must declare `timestamp` as ISO 8601 source-observed time.
+- If source-observed time is unknown, stop and say that plainly instead of inventing one.
 - `knowledge rebuild` owns `stale` and delete.
 
 For the full save contract, see [skills/knowledge/references/save-ingestion.md](skills/knowledge/references/save-ingestion.md).
@@ -195,6 +201,7 @@ Common fixes:
 Notes:
 
 - A non-empty graph after install is expected if `$HOME/.fleki/knowledge` already existed.
+- `ingests_with_reading_limits` counts unread or missing content. `ingests_with_confidence_caveats` counts operator caveats that do not imply unread content.
 
 ## Repo map
 

@@ -182,9 +182,20 @@ class KnowledgeRepository:
             page_metadata=page["metadata"],
             section_id=section_id,
         )
-        relevant_provenance = [entry["provenance_id"] for entry in support_entries]
+        relevant_provenance = self._dedupe_preserve_order(
+            [
+                entry["provenance_id"]
+                for entry in support_entries
+                if entry.get("provenance_id")
+            ]
+        )
         matched_evidence_locators = self._dedupe_preserve_order(
             [entry["locator"] for entry in support_entries if entry.get("locator")]
+        )
+        supported_sections = self._supported_sections(
+            page=page,
+            provenance_map=provenance_map,
+            requested_section_id=section_id,
         )
         if section_id is not None:
             matched_heading, matched_snippet = self._section_match_fields(
@@ -250,6 +261,7 @@ class KnowledgeRepository:
             "matched_heading": matched_heading,
             "matched_snippet": matched_snippet,
             "matched_evidence_locators": matched_evidence_locators,
+            "supported_sections": supported_sections,
             "authority_posture": page["metadata"].get("authority_posture", "tentative"),
             "lifecycle_state": page["metadata"].get("lifecycle_state", "unknown"),
             "effective_lifecycle_state": self._effective_lifecycle_state(
@@ -281,6 +293,7 @@ class KnowledgeRepository:
         }
         pending_scopes = []
         reading_limit_count = 0
+        confidence_caveat_count = 0
         conflict_count = 0
         topic_counter: Counter[str] = Counter()
         approved_helpers: set[str] = set()
@@ -294,8 +307,11 @@ class KnowledgeRepository:
             for scope in metadata.get("rebuild_pending_scopes", []):
                 if scope not in cleared_scopes:
                     pending_scopes.append(scope)
-            if metadata.get("reading_limitations"):
+            reading_limitations = metadata.get("reading_limitations", [])
+            if any(item.get("gaps") for item in reading_limitations):
                 reading_limit_count += 1
+            if any(item.get("confidence_notes") for item in reading_limitations):
+                confidence_caveat_count += 1
             for conflict in metadata.get("conflicts_or_questions", []):
                 if conflict["type"] in {"conflict", "authority_collision"}:
                     conflict_count += 1
@@ -369,6 +385,7 @@ class KnowledgeRepository:
             "pending_source_ingests": 0,
             "pending_rebuild_scope_count": len(set(pending_scopes)),
             "ingests_with_reading_limits": reading_limit_count,
+            "ingests_with_confidence_caveats": confidence_caveat_count,
             "approved_helpers_in_use": sorted(approved_helpers),
             "rebuild_pending": sorted(set(pending_scopes)),
             "hot_topics": [topic for topic, _ in topic_counter.most_common(3)],
@@ -1317,6 +1334,9 @@ class KnowledgeRepository:
             return fragment
         if fragment in section_ids:
             return str(section_ids[fragment])
+        normalized_fragment = section_key(fragment)
+        if normalized_fragment in section_ids:
+            return str(section_ids[normalized_fragment])
         raise ValidationError(f"unable to trace ref: {original_ref}")
 
     def _search_exact_matches(
@@ -1545,6 +1565,57 @@ class KnowledgeRepository:
                 )
             section_heading_by_key[key] = heading
         return section_heading_by_key
+
+    def _supported_sections(
+        self,
+        *,
+        page: Mapping[str, Any],
+        provenance_map: Mapping[str, Mapping[str, Any]],
+        requested_section_id: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        supported_sections: List[Dict[str, Any]] = []
+        section_ids = page["metadata"].get("section_ids", {})
+        for heading, section_lines in page["sections"].items():
+            if heading == "Provenance Notes":
+                continue
+            current_section_id = section_ids.get(section_key(heading))
+            if current_section_id is None:
+                continue
+            if requested_section_id is not None and current_section_id != requested_section_id:
+                continue
+            support_entries = self._section_support_entries(
+                page_metadata=page["metadata"],
+                section_id=current_section_id,
+            )
+            if requested_section_id is None and not support_entries:
+                continue
+            provenance_ids = self._dedupe_preserve_order(
+                [
+                    entry["provenance_id"]
+                    for entry in support_entries
+                    if entry.get("provenance_id")
+                ]
+            )
+            supported_sections.append(
+                {
+                    "section_id": current_section_id,
+                    "heading": heading,
+                    "trace_ref": f"{page['metadata']['knowledge_id']}#{current_section_id}",
+                    "snippet": next(
+                        (line.strip() for line in section_lines if line.strip()),
+                        heading,
+                    ),
+                    "matched_evidence_locators": self._dedupe_preserve_order(
+                        [entry["locator"] for entry in support_entries if entry.get("locator")]
+                    ),
+                    "provenance": [
+                        provenance_map[provenance_id]["relative_path"]
+                        for provenance_id in provenance_ids
+                        if provenance_id in provenance_map
+                    ],
+                }
+            )
+        return supported_sections
 
     def _find_matching_provenance_note(
         self,

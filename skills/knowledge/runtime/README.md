@@ -15,12 +15,16 @@ Persistent-root note:
 
 Search/trace contract:
 - `knowledge search` is deterministic candidate discovery; use the returned `trace_ref` as the handoff into trace
+- `knowledge search` stays literal; rewrite paraphrases into exact page text, paths, aliases, or headings when needed
 - `knowledge trace` accepts exact refs only: `knowledge_id`, `knowledge_id#section_id`, `current_path`, page alias, or `current_path#section_alias`
+- section aliases accept deterministic normalization like `current_understanding`, `current-understanding`, or `Current Understanding`
+- page-level trace returns `supported_sections`; it does not guess a best section
 
 Save contract notes:
 - `knowledge save` applies immediately; there is no preview, validate-only, or dry-run save path
 - bindings must include `source_family`: `codex`, `hermes`, `images`, `other`, `paperclip`, `pdf`
-- bindings may include `timestamp` as ISO 8601 source-observed time
+- bindings must include `timestamp` as ISO 8601 source-observed time
+- if source-observed time is unknown, stop instead of inventing it
 - `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`
 - `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`
 - do not swap `authority_tier` and `authority_posture`
@@ -28,6 +32,10 @@ Save contract notes:
 - `knowledge_units[].temporal_scope`: `evergreen`, `time_bound`, `ephemeral`
 - `topic_actions[].lifecycle_state`: `current` or `historical`
 - `knowledge rebuild` owns `stale` and delete
+
+Status contract notes:
+- `ingests_with_reading_limits` counts unread or missing content only
+- `ingests_with_confidence_caveats` counts confidence notes that do not imply unread content
 
 Minimal valid save example:
 

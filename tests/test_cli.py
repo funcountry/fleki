@@ -45,7 +45,7 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_info.exception.code, 0)
         rendered = stdout.getvalue()
         self.assertIn('Bindings must include "source_family"', rendered)
-        self.assertIn('Bindings may include "timestamp"', rendered)
+        self.assertIn('Bindings must include "timestamp"', rendered)
         self.assertIn("ingest_summary.authority_tier", rendered)
         self.assertIn("knowledge_units[].authority_posture", rendered)
         self.assertIn("knowledge_units[].kind", rendered)
@@ -104,6 +104,7 @@ class CliContractTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -135,6 +136,7 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["missing_lifecycle_state_count"], 1)
+        self.assertIn("ingests_with_confidence_caveats", payload)
 
     def test_pdf_save_json_stdout_stays_parseable_in_subprocess(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -150,6 +152,7 @@ class CliContractTest(unittest.TestCase):
                 "local_path": str(pdf_path),
                 "source_kind": "pdf_research",
                 "source_family": "pdf",
+                "timestamp": "2026-04-03T12:00:00+00:00",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
                 "preserve_mode": "copy",
@@ -209,6 +212,7 @@ class CliContractTest(unittest.TestCase):
                 "local_path": str(pdf_path),
                 "source_kind": "pdf_research",
                 "source_family": "pdf",
+                "timestamp": "2026-04-03T12:00:00+00:00",
                 "authority_tier": "historical_support",
                 "sensitivity": "internal",
                 "preserve_mode": "copy",
@@ -264,6 +268,7 @@ class CliContractTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -309,6 +314,7 @@ class CliContractTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -340,6 +346,51 @@ class CliContractTest(unittest.TestCase):
         self.assertIn("match_kind", payload["results"][0])
         self.assertNotIn("score", payload["results"][0])
 
+    def test_trace_human_output_includes_supported_sections(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "trace.txt"
+        source_path.write_text("AIM is auth-only.\n")
+
+        from knowledge_graph import SourceBinding
+
+        binding = SourceBinding(
+            source_id="note.cli.trace",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/cli-trace-contract",
+            candidate_title="CLI Trace Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = "AIM is auth-only."
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "trace",
+                    "knowledge-system/cli-trace-contract",
+                    "--no-receipt",
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("supported_sections=", rendered)
+        self.assertIn("knowledge-system/cli-trace-contract", rendered)
+
     def test_rebuild_plan_parses_lifecycle_and_delete_fields(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
@@ -354,6 +405,7 @@ class CliContractTest(unittest.TestCase):
             local_path=source_path,
             source_kind="codex_session",
             source_family="codex",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -414,6 +466,7 @@ class CliContractTest(unittest.TestCase):
                 "local_path": str(source_path),
                 "source_kind": "markdown_doc",
                 "source_family": "other",
+                "timestamp": "2026-04-03T12:00:00+00:00",
             }
         ]
         decision_payload = sample_save_decision(
@@ -465,6 +518,7 @@ class CliContractTest(unittest.TestCase):
                 "source_id": "note.missing.family",
                 "local_path": str(source_path),
                 "source_kind": "markdown_doc",
+                "timestamp": "2026-04-03T12:00:00+00:00",
             }
         ]
         decision_payload = sample_save_decision(
@@ -497,6 +551,55 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("error:", rendered)
         self.assertIn("source binding missing required keys: source_family", rendered)
+        self.assertNotIn("Traceback", rendered)
+
+    def test_missing_timestamp_is_reported_without_traceback(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "missing-timestamp.md"
+        source_path.write_text("Missing timestamp.\n")
+        bindings_path = root / "bindings.json"
+        decision_path = root / "decision.json"
+
+        bindings_payload = [
+            {
+                "source_id": "note.missing.timestamp",
+                "local_path": str(source_path),
+                "source_kind": "markdown_doc",
+                "source_family": "other",
+            }
+        ]
+        decision_payload = sample_save_decision(
+            source_ids=["note.missing.timestamp"],
+            topic_path="knowledge-system/missing-source-time",
+            candidate_title="Missing Source Time",
+        )
+
+        bindings_path.write_text(json.dumps(bindings_payload))
+        decision_path.write_text(json.dumps(decision_payload))
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "save",
+                    "--json",
+                    "--bindings",
+                    str(bindings_path),
+                    "--decision",
+                    str(decision_path),
+                    "--install-manifest-path",
+                    str(repo.install_manifest_path),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+
+        rendered = stderr.getvalue()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("error:", rendered)
+        self.assertIn("source binding missing required keys: timestamp", rendered)
         self.assertNotIn("Traceback", rendered)
 
     def test_trace_not_found_is_reported_without_traceback(self) -> None:

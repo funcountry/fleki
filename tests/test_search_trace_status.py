@@ -15,7 +15,7 @@ from knowledge_graph import (
 
 
 class SearchTraceStatusTest(unittest.TestCase):
-    def test_trace_resolves_current_path_section_alias_and_rejects_unknown_fragment(self) -> None:
+    def test_trace_resolves_normalized_section_aliases_and_rejects_unknown_fragment(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
 
@@ -26,6 +26,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -48,7 +49,11 @@ class SearchTraceStatusTest(unittest.TestCase):
         repo.apply_save(source_bindings=[binding], decision=decision)
 
         trace = repo.trace("knowledge-system/multimodal-runtime-validation#current_understanding")
+        hyphen_trace = repo.trace("knowledge-system/multimodal-runtime-validation#current-understanding")
+        heading_trace = repo.trace("knowledge-system/multimodal-runtime-validation#Current Understanding")
         self.assertIsNotNone(trace["section_id"])
+        self.assertEqual(trace["section_id"], hyphen_trace["section_id"])
+        self.assertEqual(trace["section_id"], heading_trace["section_id"])
         self.assertEqual(trace["matched_heading"], "Current Understanding")
         self.assertEqual(
             trace["matched_snippet"],
@@ -56,8 +61,152 @@ class SearchTraceStatusTest(unittest.TestCase):
         )
         self.assertEqual(trace["matched_evidence_locators"], ["line 1"])
         self.assertEqual(len(trace["provenance"]), 1)
+        self.assertEqual(
+            trace["supported_sections"],
+            [
+                {
+                    "section_id": trace["section_id"],
+                    "heading": "Current Understanding",
+                    "trace_ref": f"{trace['knowledge_id']}#{trace['section_id']}",
+                    "snippet": "- Exact trace should resolve section aliases from stored metadata.",
+                    "matched_evidence_locators": ["line 1"],
+                    "provenance": trace["provenance"],
+                }
+            ],
+        )
         with self.assertRaises(ValidationError):
             repo.trace("knowledge-system/multimodal-runtime-validation#does_not_exist")
+
+    def test_page_trace_returns_supported_sections_without_guessing(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "page-trace.md"
+        source_path.write_text("Two sections should remain explicit.\n")
+        binding = SourceBinding(
+            source_id="note.page.trace",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/page-trace-contract",
+            candidate_title="Page Trace Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"] = [
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "The page trace should list supported sections.",
+                "rationale": "Operators need a deterministic section summary.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 1",
+                        "notes": "",
+                    }
+                ],
+            },
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Operational Notes",
+                },
+                "statement": "The page trace should not guess a best section.",
+                "rationale": "Section summaries are better than fake ranking.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 1",
+                        "notes": "",
+                    }
+                ],
+            },
+        ]
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        trace = repo.trace("knowledge-system/page-trace-contract")
+        self.assertIsNone(trace["section_id"])
+        self.assertIsNone(trace["matched_heading"])
+        self.assertIsNone(trace["matched_snippet"])
+        self.assertEqual(len(trace["supported_sections"]), 2)
+        self.assertEqual(
+            [item["heading"] for item in trace["supported_sections"]],
+            ["Current Understanding", "Operational Notes"],
+        )
+        self.assertTrue(
+            all(item["trace_ref"].startswith(f"{trace['knowledge_id']}#") for item in trace["supported_sections"])
+        )
+
+    def test_trace_dedupes_provenance_paths(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "dedupe-trace.md"
+        source_path.write_text("Repeated evidence should not duplicate provenance.\n")
+        binding = SourceBinding(
+            source_id="note.trace.dedupe",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/trace-dedupe-contract",
+            candidate_title="Trace Dedupe Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["topic_actions"][0]["knowledge_units"] = [
+            {
+                "kind": "fact",
+                "temporal_scope": "evergreen",
+                "target_section": {
+                    "section_id": None,
+                    "heading": "Current Understanding",
+                },
+                "statement": "Trace should dedupe provenance paths.",
+                "rationale": "Multiple locators can still point to one provenance note.",
+                "authority_posture": "supported_by_internal_session",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 1",
+                        "notes": "",
+                    },
+                    {
+                        "source_id": binding.source_id,
+                        "locator": "line 1 (repeat)",
+                        "notes": "",
+                    },
+                ],
+            }
+        ]
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        trace = repo.trace("knowledge-system/trace-dedupe-contract#current_understanding")
+        self.assertEqual(len(trace["provenance"]), 1)
+        self.assertEqual(len(trace["supported_sections"][0]["provenance"]), 1)
+        self.assertEqual(
+            trace["supported_sections"][0]["matched_evidence_locators"],
+            ["line 1", "line 1 (repeat)"],
+        )
 
     def test_search_trace_and_status_are_authority_aware(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -147,6 +296,55 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertNotIn("runtime_agreement", status)
         self.assertNotIn("runtime_agreement_state", status)
 
+    def test_status_splits_reading_limits_from_confidence_caveats(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        confidence_source = root / "confidence.md"
+        confidence_source.write_text("Confidence caveat only.\n")
+        gap_source = root / "gap.md"
+        gap_source.write_text("Reading gap example.\n")
+
+        confidence_binding = SourceBinding(
+            source_id="note.confidence.only",
+            local_path=confidence_source,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        gap_binding = SourceBinding(
+            source_id="note.reading.gap",
+            local_path=gap_source,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T13:00:00+00:00",
+        )
+
+        confidence_decision = sample_save_decision(
+            source_ids=[confidence_binding.source_id],
+            topic_path="knowledge-system/confidence-caveat-contract",
+            candidate_title="Confidence Caveat Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        confidence_decision["source_reading_reports"][0]["confidence_notes"] = [
+            "This is a dated internal note, not live doctrine."
+        ]
+
+        gap_decision = sample_save_decision(
+            source_ids=[gap_binding.source_id],
+            topic_path="knowledge-system/reading-gap-contract",
+            candidate_title="Reading Gap Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        gap_decision["source_reading_reports"][0]["gaps"] = ["Appendix was not readable."]
+
+        repo.apply_save(source_bindings=[confidence_binding], decision=confidence_decision)
+        repo.apply_save(source_bindings=[gap_binding], decision=gap_decision)
+
+        status = repo.status()
+        self.assertEqual(status["ingests_with_confidence_caveats"], 1)
+        self.assertEqual(status["ingests_with_reading_limits"], 1)
+
     def test_search_prefers_topical_match_over_path_noise(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
@@ -208,6 +406,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -274,6 +473,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -294,6 +494,10 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertEqual(search["results"][0]["match_kind"], "exact_current_path_section")
         self.assertEqual(search["results"][0]["trace_ref"], expected_trace_ref)
 
+        normalized_search = repo.search("knowledge-system/exact-search-contract#current-understanding")
+        self.assertEqual(len(normalized_search["results"]), 1)
+        self.assertEqual(normalized_search["results"][0]["trace_ref"], expected_trace_ref)
+
     def test_search_returns_no_results_for_confident_miss(self) -> None:
         temp_dir, root, repo = make_temp_repo()
         self.addCleanup(temp_dir.cleanup)
@@ -309,6 +513,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -336,6 +541,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -362,6 +568,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=source_path,
             source_kind="markdown_doc",
             source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -391,6 +598,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=copied_pdf_path,
             source_kind="pdf_research",
             source_family="pdf",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         secret_binding = SourceBinding(
             source_id="pdf.secret.lesson",
@@ -399,6 +607,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             source_family="pdf",
             sensitivity="secret_pointer_only",
             preserve_mode="pointer",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
 
         copied_decision = sample_save_decision(
@@ -523,6 +732,7 @@ class SearchTraceStatusTest(unittest.TestCase):
             local_path=pdf_path,
             source_kind="pdf_research",
             source_family="pdf",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
