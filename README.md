@@ -91,6 +91,69 @@ Look for these fields in the output:
 - `recent_topics`
 - `pdf_render_contract_gap_count`
 
+## Review wiki and Quartz
+
+The review wiki is a local read-only view of the live knowledge graph. It does
+not become a second source of truth, and Quartz does not read the raw graph
+directory directly.
+
+What the installer sets up:
+
+- installs the normal Fleki CLI and runtime bundles
+- copies the repo-owned Quartz overlay from `templates/review-wiki/**` into
+  `~/.fleki/state/review-wiki/quartz/`
+- runs `npm install` inside that derived Quartz workspace
+- copies the installed Quartz runtime scaffold from
+  `node_modules/@jackyzha0/quartz/quartz/` into the same derived workspace
+- installs one per-user background service that runs
+  `python -m knowledge_graph.review_wiki.daemon`
+
+Current Quartz requirement and pin:
+
+- Quartz `4.5.2`
+- Node `>=22`
+- npm `>=10.9.2`
+
+Current review-wiki service names:
+
+- macOS: `~/Library/LaunchAgents/dev.fleki.review-wiki.plist`
+- Linux: `~/.config/systemd/user/fleki-review-wiki.service`
+
+Current derived state tree:
+
+- `~/.fleki/state/review-wiki/quartz/content/`
+- `~/.fleki/state/review-wiki/quartz/public/`
+- `~/.fleki/state/review-wiki/export-digest.json`
+- `~/.fleki/state/review-wiki/build.log`
+
+How it works:
+
+- Fleki exports only `topics/**`, `topics/indexes/**`, and `provenance/**`
+  into the derived Quartz `content/` tree
+- Fleki computes an export digest and skips rebuilds when the exported content
+  did not change
+- the daemon polls every 5 seconds
+- when the digest changes, Fleki runs a Quartz build into a staging public tree
+  and atomically replaces the live `public/` tree
+- Fleki serves the built static files itself on `127.0.0.1:4151`
+
+What it does not do:
+
+- it does not point Quartz at `$HOME/.fleki/knowledge`
+- it does not publish `sources/**`, `receipts/**`, or `.record.json`
+- it does not export raw PDFs, render assets, or other copied source files
+- it does not use `quartz build --serve` as the installed long-running service
+- it does not use a separate review-wiki config file in v1
+
+If you want to expose the review wiki through another local reverse proxy or a
+tailnet-only Tailscale route, point that layer at:
+
+```text
+http://127.0.0.1:4151
+```
+
+That machine-specific network setup is outside the repo installer.
+
 ## Quick start
 
 Check the active graph:
