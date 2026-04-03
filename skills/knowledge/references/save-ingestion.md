@@ -30,6 +30,34 @@ Return an ingestion decision that includes:
 
 ## Temporal inputs
 
+- `ingest_summary.authority_tier` accepts:
+  - `live_doctrine`
+  - `raw_runtime`
+  - `historical_support`
+  - `generated_mirror`
+  - `mixed`
+
+- `knowledge_units[].authority_posture` accepts:
+  - `live_doctrine`
+  - `supported_by_runtime`
+  - `supported_by_internal_session`
+  - `tentative`
+  - `mixed`
+
+- These are different enums.
+  - `historical_support` is valid for `ingest_summary.authority_tier`.
+  - `historical_support` is not valid for `knowledge_units[].authority_posture`.
+
+- `knowledge_units[].kind` accepts:
+  - `fact`
+  - `principle`
+  - `playbook`
+  - `decision`
+  - `pattern`
+  - `regression`
+  - `glossary`
+  - `question`
+
 - Each binding object may include `timestamp` as ISO 8601 source-observed time.
 - Each knowledge unit may include `temporal_scope`:
   - `evergreen`
@@ -44,6 +72,7 @@ Return an ingestion decision that includes:
 
 - Every source must have a reading report.
 - Every non-trivial knowledge unit must have evidence.
+- Use `fact` for plain observations unless a stronger semantic kind fits better.
 - Unknown time should stay unknown. Do not invent `current` or a made-up source-observed timestamp.
 - Topic paths must be semantic, never source-family-first.
 - Provenance notes must be one-per-source or explicitly bundled with rationale.

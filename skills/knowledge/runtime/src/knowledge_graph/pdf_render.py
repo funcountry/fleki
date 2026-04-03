@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.metadata
+import io
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
 from .models import PdfRenderBundle
 
 
 class PdfRenderError(RuntimeError):
     pass
+
+
+INLINE_LIST_MARKER_RE = re.compile(r"(?<=\S)\s+(?=(?:\d+\.\s+|[-*]\s+))")
+INLINE_SECTION_MARKER_RE = re.compile(
+    r"(?<=\S)\s+(?=(?:Section|Sections|Chapter|Part|Appendix|Example|Examples|Notes?|Summary|Overview):\s)"
+)
 
 
 @lru_cache(maxsize=1)
@@ -83,6 +92,32 @@ def _relative_paths(root: Path, paths: Iterable[Path]) -> tuple[str, ...]:
     return tuple(path.relative_to(root).as_posix() for path in paths)
 
 
+def _run_quietly(callback: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        return callback(*args, **kwargs)
+
+
+def _restore_markdown_structure(markdown_text: str) -> str:
+    blocks = markdown_text.split("\n\n")
+    restored_blocks: list[str] = []
+    for block in blocks:
+        stripped = block.strip()
+        if not stripped:
+            restored_blocks.append("")
+            continue
+        if stripped.startswith(("#", "|", "```", "![", "<!--")):
+            restored_blocks.append(block)
+            continue
+
+        rewritten = " ".join(line.strip() for line in block.splitlines() if line.strip())
+        if re.match(r"^(?:\d+\.\s+|[-*]\s+)", rewritten):
+            rewritten = INLINE_LIST_MARKER_RE.sub("\n", rewritten)
+        rewritten = INLINE_SECTION_MARKER_RE.sub("\n", rewritten)
+        restored_blocks.append(rewritten)
+    return "\n\n".join(restored_blocks)
+
+
 def render_pdf_bundle(
     *,
     root: Path | str,
@@ -101,8 +136,8 @@ def render_pdf_bundle(
     except ImportError as exc:
         raise PdfRenderError("docling is required for PDF render bundle generation") from exc
 
-    converter = _docling_converter()
-    result = converter.convert(raw_path)
+    converter = _run_quietly(_docling_converter)
+    result = _run_quietly(converter.convert, raw_path)
     if result.status != ConversionStatus.SUCCESS:
         raise PdfRenderError(
             f"docling conversion failed for {raw_path.name}: {result.status!s}"
@@ -111,15 +146,18 @@ def render_pdf_bundle(
     render_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Raw-source manifests own identity and storage mode; render manifests own derived-render facts.
-    result.document.save_as_markdown(
+    _run_quietly(
+        result.document.save_as_markdown,
         render_path,
         artifacts_dir=assets_dir,
         image_mode=ImageRefMode.REFERENCED,
         page_break_placeholder="<!-- page break -->",
+        escape_html=False,
     )
 
     markdown_text = render_path.read_text()
     markdown_text = _rewrite_asset_paths(markdown_text, asset_dir=assets_dir)
+    markdown_text = _restore_markdown_structure(markdown_text)
     render_path.write_text(markdown_text)
 
     if not markdown_text.strip():

@@ -196,12 +196,23 @@ class KnowledgeRepository:
         render_manifest_paths = []
         render_artifact_paths = []
         render_omissions = []
+        render_contract_gaps = []
         for relative_path, manifest in source_manifests.items():
             source_id = manifest.get("source_id")
             if source_id:
                 captured_at_by_source[source_id] = manifest.get("captured_at")
                 if manifest.get("source_observed_at") is not None:
                     source_observed_at_by_source[source_id] = manifest["source_observed_at"]
+            gap_reason = self._render_contract_gap_reason(manifest)
+            if gap_reason:
+                render_contract_gaps.append(
+                    {
+                        "source_id": source_id,
+                        "source_record": relative_path,
+                        "gap_reason": gap_reason,
+                    }
+                )
+                continue
             render_manifest_path = manifest.get("render_manifest_relative_path")
             render_path = manifest.get("render_relative_path")
             if render_manifest_path and render_manifest_path not in render_manifest_paths:
@@ -243,17 +254,13 @@ class KnowledgeRepository:
             "render_manifests": render_manifest_paths,
             "render_artifacts": render_artifact_paths,
             "render_omissions": render_omissions,
+            "render_contract_gaps": render_contract_gaps,
         }
         if write_receipt:
             self._write_receipt("trace", payload, timestamp=self._timestamp())
         return payload
 
-    def status(
-        self,
-        *,
-        runtime_manifests: Optional[Sequence[Mapping[str, Any]]] = None,
-        write_receipt: bool = True,
-    ) -> Dict[str, Any]:
+    def status(self, *, write_receipt: bool = True) -> Dict[str, Any]:
         self.initialize_layout()
         save_receipts = self._load_receipts("save")
         rebuild_receipts = self._load_receipts("rebuild")
@@ -270,6 +277,7 @@ class KnowledgeRepository:
         rendered_pdf_sources = 0
         limited_fidelity_pdf_sources = 0
         omitted_pdf_sources = 0
+        pdf_render_contract_gap_count = 0
 
         for receipt in save_receipts:
             metadata = receipt["metadata"]
@@ -293,7 +301,11 @@ class KnowledgeRepository:
             last_rebuild = max(receipt["metadata"]["created_at"] for receipt in rebuild_receipts)
 
         for manifest in self._load_all_source_record_manifests():
-            if manifest.get("source_family") != "pdf":
+            if self._manifest_source_family(manifest) != "pdf":
+                continue
+            gap_reason = self._render_contract_gap_reason(manifest)
+            if gap_reason:
+                pdf_render_contract_gap_count += 1
                 continue
             if manifest.get("render_manifest_relative_path"):
                 rendered_pdf_sources += 1
@@ -355,7 +367,7 @@ class KnowledgeRepository:
             "pdf_rendered_sources": rendered_pdf_sources,
             "pdf_limited_fidelity_sources": limited_fidelity_pdf_sources,
             "pdf_render_omitted_sources": omitted_pdf_sources,
-            "runtime_agreement": self._runtime_agreement(runtime_manifests or []),
+            "pdf_render_contract_gap_count": pdf_render_contract_gap_count,
         }
         if write_receipt:
             self._write_receipt("status", payload, timestamp=self._timestamp())
@@ -386,13 +398,26 @@ class KnowledgeRepository:
         bindings_by_id: Mapping[str, SourceBinding],
         timestamp: str,
     ) -> Dict[str, Dict[str, Any]]:
+        return self._stage_source_records(
+            bindings_by_id,
+            root=self.data_root,
+            timestamp=timestamp,
+        )
+
+    def _stage_source_records(
+        self,
+        bindings_by_id: Mapping[str, SourceBinding],
+        *,
+        root: Path,
+        timestamp: str,
+    ) -> Dict[str, Dict[str, Any]]:
         records: Dict[str, Dict[str, Any]] = {}
         for source_id, binding in bindings_by_id.items():
             if not binding.local_path.exists():
                 raise FileNotFoundError(f"source path does not exist: {binding.local_path}")
 
             family = self._source_family(binding)
-            destination_dir = self.sources_root / family
+            destination_dir = root / "sources" / family
             destination_dir.mkdir(parents=True, exist_ok=True)
 
             safe_id = safe_filename(source_id)
@@ -426,7 +451,7 @@ class KnowledgeRepository:
                 "authority_tier": binding.authority_tier,
                 "sensitivity": binding.sensitivity,
                 "storage_mode": storage_mode,
-                "relative_path": self._relative(raw_destination),
+                "relative_path": self._relative_to(root, raw_destination),
                 "sha256": self._sha256(binding.local_path),
                 "captured_at": timestamp,
                 "original_path": str(binding.local_path),
@@ -451,8 +476,8 @@ class KnowledgeRepository:
             records[source_id] = {
                 "manifest_path": manifest_path,
                 "raw_path": raw_destination,
-                "relative_path": self._relative(raw_destination),
-                "manifest_relative_path": self._relative(manifest_path),
+                "relative_path": self._relative_to(root, raw_destination),
+                "manifest_relative_path": self._relative_to(root, manifest_path),
                 "binding": binding,
                 "source_family": family,
                 "storage_mode": storage_mode,
@@ -465,6 +490,19 @@ class KnowledgeRepository:
         self,
         *,
         source_records: Mapping[str, Dict[str, Any]],
+        timestamp: str,
+    ) -> Dict[str, PdfRenderBundle]:
+        return self._stage_pdf_render_bundles(
+            source_records=source_records,
+            root=self.data_root,
+            timestamp=timestamp,
+        )
+
+    def _stage_pdf_render_bundles(
+        self,
+        *,
+        source_records: Mapping[str, Dict[str, Any]],
+        root: Path,
         timestamp: str,
     ) -> Dict[str, PdfRenderBundle]:
         bundles: Dict[str, PdfRenderBundle] = {}
@@ -484,7 +522,7 @@ class KnowledgeRepository:
             else:
                 # PDF rendering is the fail-loud boundary before provenance or topic writes.
                 bundle = render_pdf_bundle(
-                    root=self.data_root,
+                    root=root,
                     raw_pdf_path=record["raw_path"],
                     source_id=source_id,
                     source_sha256=record["sha256"],
@@ -1030,16 +1068,25 @@ class KnowledgeRepository:
             items.append({"path": path, "metadata": metadata, "body": body})
         return items
 
-    def _load_all_source_record_manifests(self) -> List[Dict[str, Any]]:
-        manifests = []
+    def _load_all_source_record_manifest_entries(self) -> List[Dict[str, Any]]:
+        entries = []
         if not self.sources_root.exists():
-            return manifests
+            return entries
         for path in self.sources_root.rglob("*.record.json"):
             try:
-                manifests.append(json.loads(path.read_text()))
+                entries.append(
+                    {
+                        "path": path,
+                        "relative_path": self._relative(path),
+                        "manifest": json.loads(path.read_text()),
+                    }
+                )
             except Exception:
                 continue
-        return manifests
+        return entries
+
+    def _load_all_source_record_manifests(self) -> List[Dict[str, Any]]:
+        return [entry["manifest"] for entry in self._load_all_source_record_manifest_entries()]
 
     def _load_source_record_manifests(
         self,
@@ -1378,6 +1425,25 @@ class KnowledgeRepository:
             return "images"
         return "other"
 
+    def _manifest_source_family(self, manifest: Mapping[str, Any]) -> str:
+        stored_family = manifest.get("source_family")
+        if stored_family:
+            return str(stored_family)
+        source_kind = str(manifest.get("source_kind", "")).lower()
+        relative_path = str(manifest.get("relative_path", "")).lower()
+        original_path = str(manifest.get("original_path", "")).lower()
+        if "pdf" in source_kind or relative_path.startswith("sources/pdf/") or original_path.endswith(".pdf"):
+            return "pdf"
+        if "image" in source_kind or relative_path.startswith("sources/images/"):
+            return "images"
+        if "codex" in source_kind or relative_path.startswith("sources/codex/"):
+            return "codex"
+        if "paperclip" in source_kind or relative_path.startswith("sources/paperclip/"):
+            return "paperclip"
+        if "hermes" in source_kind or relative_path.startswith("sources/hermes/"):
+            return "hermes"
+        return "other"
+
     def _provenance_family(
         self,
         source_ids: Iterable[str],
@@ -1414,37 +1480,40 @@ class KnowledgeRepository:
             f"unable to infer PDF render omission reason for {binding.source_id}"
         )
 
+    def _pdf_render_omission_reason_from_manifest(self, manifest: Mapping[str, Any]) -> str:
+        if manifest.get("sensitivity") == "secret_pointer_only":
+            return "disallowed_by_sensitivity"
+        if manifest.get("storage_mode") == "pointer":
+            return "disallowed_by_storage_mode"
+        raise ValidationError(
+            f"unable to infer PDF render omission reason for {manifest.get('source_id', 'unknown source')}"
+        )
+
+    def _render_contract_gap_reason(self, manifest: Mapping[str, Any]) -> Optional[str]:
+        if self._manifest_source_family(manifest) != "pdf":
+            return None
+        render_manifest_relative_path = manifest.get("render_manifest_relative_path")
+        render_relative_path = manifest.get("render_relative_path")
+        render_omission_reason = manifest.get("render_omission_reason")
+        has_render_eligibility = "render_eligibility" in manifest
+
+        if render_manifest_relative_path and render_relative_path:
+            manifest_path = self.data_root / str(render_manifest_relative_path)
+            render_path = self.data_root / str(render_relative_path)
+            if not manifest_path.exists() or not render_path.exists():
+                return "missing_render_artifacts"
+            return None
+        if render_omission_reason:
+            return None if has_render_eligibility else "incomplete_render_contract"
+        if has_render_eligibility or render_manifest_relative_path or render_relative_path:
+            return "incomplete_render_contract"
+        return "legacy_missing_render_contract"
+
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
     def _relative(self, path: Path) -> str:
         return path.relative_to(self.data_root).as_posix()
 
-    def _runtime_agreement(
-        self,
-        manifests: Sequence[Mapping[str, Any]],
-    ) -> Dict[str, Dict[str, Any]]:
-        agreement: Dict[str, Dict[str, Any]] = {}
-        for manifest in manifests:
-            runtime = str(manifest.get("runtime", "unknown"))
-            manifest_data_root = manifest.get("data_root")
-            manifest_install_manifest_path = manifest.get("install_manifest_path")
-            agreement[runtime] = {
-                "data_root_match": manifest_data_root == str(self.data_root),
-                "install_manifest_path_match": (
-                    manifest_install_manifest_path == str(self.install_manifest_path)
-                ),
-                "target_skill_paths": list(
-                    manifest.get("target_skill_paths")
-                    or [
-                        item
-                        for item in [
-                            manifest.get("managed_skill_path"),
-                            manifest.get("shared_skill_path"),
-                        ]
-                        if item
-                    ]
-                ),
-                "adapter_mode": manifest.get("adapter_mode"),
-            }
-        return agreement
+    def _relative_to(self, root: Path, path: Path) -> str:
+        return path.relative_to(root).as_posix()

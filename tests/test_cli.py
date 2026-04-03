@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
+import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -20,9 +23,23 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(exit_info.exception.code, 0)
         rendered = stdout.getvalue()
         self.assertIn('Bindings may include "timestamp"', rendered)
+        self.assertIn("ingest_summary.authority_tier", rendered)
+        self.assertIn("knowledge_units[].authority_posture", rendered)
+        self.assertIn("knowledge_units[].kind", rendered)
         self.assertIn("knowledge_units[].temporal_scope", rendered)
         self.assertIn("topic_actions[].lifecycle_state", rendered)
         self.assertIn("bundled runtime README.md", rendered)
+
+    def test_top_level_help_does_not_list_preview(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exit_info:
+                main(["--help"])
+
+        self.assertEqual(exit_info.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("save", rendered)
+        self.assertNotIn("preview", rendered)
 
     def test_status_command_reports_resolved_root_as_json(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -46,6 +63,66 @@ class CliContractTest(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["resolved_data_root"], str(repo.data_root))
         self.assertEqual(payload["install_manifest_path"], str(repo.install_manifest_path))
+        self.assertNotIn("runtime_agreement_state", payload)
+        self.assertNotIn("runtime_agreement", payload)
+
+    def test_pdf_save_json_stdout_stays_parseable_in_subprocess(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        pdf_path = copy_fixture_pdf(root, "subprocess-fixture.pdf")
+        bindings_path = root / "bindings.json"
+        decision_path = root / "decision.json"
+
+        bindings_payload = [
+            {
+                "source_id": "pdf.cli.subprocess",
+                "local_path": str(pdf_path),
+                "source_kind": "pdf_research",
+                "authority_tier": "historical_support",
+                "sensitivity": "internal",
+                "preserve_mode": "copy",
+            }
+        ]
+        decision_payload = sample_save_decision(
+            source_ids=["pdf.cli.subprocess"],
+            topic_path="product/cli/pdf-subprocess-runtime",
+            candidate_title="CLI PDF Subprocess Runtime",
+        )
+        decision_payload["source_reading_reports"][0]["reading_mode"] = "direct_local_pdf"
+
+        bindings_path.write_text(json.dumps(bindings_payload))
+        decision_path.write_text(json.dumps(decision_payload))
+
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{repo_root / 'src'}:{repo_root / 'tests'}"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "knowledge_graph.cli",
+                "save",
+                "--json",
+                "--bindings",
+                str(bindings_path),
+                "--decision",
+                str(decision_path),
+                "--install-manifest-path",
+                str(repo.install_manifest_path),
+                "--repo-root",
+                str(root),
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=repo_root,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["result"], "applied")
 
     def test_save_command_renders_pdf_bundle(self) -> None:
         temp_dir, root, repo = make_temp_repo()

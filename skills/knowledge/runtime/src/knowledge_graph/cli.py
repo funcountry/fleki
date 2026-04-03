@@ -73,6 +73,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Apply a save decision from JSON inputs.",
         epilog=(
             'Bindings may include "timestamp" (ISO 8601 source-observed time).\n'
+            "ingest_summary.authority_tier: generated_mirror | historical_support | live_doctrine | mixed | raw_runtime\n"
+            "knowledge_units[].authority_posture: live_doctrine | mixed | supported_by_internal_session | supported_by_runtime | tentative\n"
+            "knowledge_units[].kind: fact | principle | playbook | decision | pattern | regression | glossary | question\n"
             "knowledge_units[].temporal_scope: evergreen | time_bound | ephemeral\n"
             "topic_actions[].lifecycle_state: current | historical\n"
             "Rebuild owns stale transitions and delete.\n"
@@ -128,6 +131,7 @@ def _command_status(args: argparse.Namespace) -> int:
             f"historical_topic_count={result['historical_topic_count']}",
             f"stale_topic_count={result['stale_topic_count']}",
             f"superseded_topic_count={result['superseded_topic_count']}",
+            f"pdf_render_contract_gap_count={result['pdf_render_contract_gap_count']}",
         ),
     )
     return 0
@@ -167,6 +171,7 @@ def _command_trace(args: argparse.Namespace) -> int:
         f"last_supported_at={result['last_supported_at']}",
         f"provenance_count={len(result['provenance'])}",
         f"source_record_count={len(result['source_records'])}",
+        f"render_contract_gap_count={len(result['render_contract_gaps'])}",
     ]
     _emit_payload(result, as_json=False, lines=lines)
     return 0
@@ -174,10 +179,7 @@ def _command_trace(args: argparse.Namespace) -> int:
 
 def _command_save(args: argparse.Namespace) -> int:
     repo = _build_repo(args)
-    bindings_payload = _load_json(args.bindings)
-    if not isinstance(bindings_payload, list):
-        raise SystemExit("--bindings must point to a JSON list")
-    bindings = tuple(_binding_from_dict(item) for item in bindings_payload)
+    bindings = _load_bindings(args.bindings)
     decision = _load_json(args.decision)
     if not isinstance(decision, dict):
         raise SystemExit("--decision must point to a JSON object")
@@ -290,6 +292,13 @@ def _optional_lifecycle_state(value: Any) -> str | None:
             "rebuild page update lifecycle_state must be one of: current, historical, stale"
         )
     return rendered
+
+
+def _load_bindings(path_text: str) -> tuple[SourceBinding, ...]:
+    bindings_payload = _load_json(path_text)
+    if not isinstance(bindings_payload, list):
+        raise SystemExit("--bindings must point to a JSON list")
+    return tuple(_binding_from_dict(item) for item in bindings_payload)
 
 
 def _load_json(path_text: str) -> Any:

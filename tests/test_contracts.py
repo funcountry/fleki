@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from common import make_temp_repo, sample_save_decision
 from knowledge_graph.ids import make_opaque_id
@@ -8,6 +10,24 @@ from knowledge_graph.validation import ValidationError, validate_save_decision
 
 
 class ContractsTest(unittest.TestCase):
+    def test_canonical_minimal_example_validates_against_live_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        bindings_path = root / "skills" / "knowledge" / "references" / "examples" / "minimal-save-bindings.json"
+        decision_path = root / "skills" / "knowledge" / "references" / "examples" / "minimal-save-decision.json"
+
+        bindings_payload = json.loads(bindings_path.read_text())
+        decision_payload = json.loads(decision_path.read_text())
+        source_bindings = {
+            item["source_id"]: object()
+            for item in bindings_payload
+        }
+
+        validate_save_decision(
+            decision_payload,
+            source_bindings=source_bindings,
+            fallback_policy="forbidden",
+        )
+
     def test_make_opaque_id_preserves_prefix(self) -> None:
         generated = make_opaque_id("kg")
         self.assertTrue(generated.startswith("kg_"))
@@ -202,6 +222,65 @@ class ContractsTest(unittest.TestCase):
                 source_bindings={"note.1": object()},
                 fallback_policy="forbidden",
             )
+
+    def test_fact_kind_is_accepted(self) -> None:
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["kind"] = "fact"
+
+        validate_save_decision(
+            decision,
+            source_bindings={"note.1": object()},
+            fallback_policy="forbidden",
+        )
+
+    def test_authority_posture_error_lists_allowed_values_and_tier_hint(self) -> None:
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["authority_posture"] = "historical_support"
+
+        with self.assertRaises(ValidationError) as error_info:
+            validate_save_decision(
+                decision,
+                source_bindings={"note.1": object()},
+                fallback_policy="forbidden",
+            )
+
+        message = str(error_info.exception)
+        self.assertIn("knowledge_unit.authority_posture is invalid", message)
+        self.assertIn("supported_by_internal_session", message)
+        self.assertIn("supported_by_runtime", message)
+        self.assertIn("'historical_support' belongs to ingest_summary.authority_tier", message)
+
+    def test_authority_tier_error_lists_allowed_values_and_posture_hint(self) -> None:
+        decision = sample_save_decision(
+            source_ids=["note.1"],
+            topic_path="doctrine/shared-agent-learnings",
+            candidate_title="Shared Agent Learnings",
+        )
+        decision["ingest_summary"]["authority_tier"] = "supported_by_runtime"
+
+        with self.assertRaises(ValidationError) as error_info:
+            validate_save_decision(
+                decision,
+                source_bindings={"note.1": object()},
+                fallback_policy="forbidden",
+            )
+
+        message = str(error_info.exception)
+        self.assertIn("ingest_summary.authority_tier is invalid", message)
+        self.assertIn("historical_support", message)
+        self.assertIn("raw_runtime", message)
+        self.assertIn(
+            "'supported_by_runtime' belongs to knowledge_units[].authority_posture",
+            message,
+        )
 
     def test_save_rejects_stale_lifecycle_state(self) -> None:
         decision = sample_save_decision(

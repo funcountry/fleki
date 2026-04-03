@@ -13,6 +13,7 @@ class SkillPackageTest(unittest.TestCase):
         repo_install_script = root / "install.sh"
         runtime_sync_script = root / "scripts" / "sync_knowledge_runtime.py"
         repo_installer_script = root / "scripts" / "install_knowledge_skill.py"
+        backfill_script = root / "scripts" / "backfill_pdf_render_contract.py"
 
         self.assertTrue(skill_root.exists(), msg=str(skill_root))
         self.assertTrue((skill_root / "SKILL.md").exists())
@@ -32,6 +33,8 @@ class SkillPackageTest(unittest.TestCase):
             skill_root / "references" / "search-and-trace.md",
             skill_root / "references" / "storage-and-authority.md",
             skill_root / "references" / "examples-and-validation.md",
+            skill_root / "references" / "examples" / "minimal-save-bindings.json",
+            skill_root / "references" / "examples" / "minimal-save-decision.json",
             skill_root / "install" / "README.md",
             skill_root / "install" / "bootstrap.sh",
         ]
@@ -42,14 +45,16 @@ class SkillPackageTest(unittest.TestCase):
         self.assertTrue(repo_install_script.exists(), msg=str(repo_install_script))
         self.assertTrue(runtime_sync_script.exists(), msg=str(runtime_sync_script))
         self.assertTrue(repo_installer_script.exists(), msg=str(repo_installer_script))
+        self.assertTrue(backfill_script.exists(), msg=str(backfill_script))
 
         readme_text = repo_readme.read_text()
         self.assertIn("./install.sh", readme_text)
         self.assertIn("--dry-run", readme_text)
-        self.assertIn("~/.fleki/knowledge", readme_text)
+        self.assertIn("$HOME/.fleki/knowledge", readme_text)
         self.assertIn("Hermes", readme_text)
         self.assertIn("OpenClaw", readme_text)
-        self.assertIn("Manual PDF Smoke", readme_text)
+        self.assertIn("knowledge save", readme_text)
+        self.assertNotIn("knowledge preview", readme_text)
 
         install_script_text = repo_install_script.read_text()
         self.assertIn("scripts/install_knowledge_skill.py", install_script_text)
@@ -76,6 +81,11 @@ class SkillPackageTest(unittest.TestCase):
         self.assertIn("Minimal valid save example", runtime_readme)
         self.assertIn("Create `bindings.json`", runtime_readme)
         self.assertIn("Create `decision.json`", runtime_readme)
+        self.assertIn("`ingest_summary.authority_tier`", runtime_readme)
+        self.assertIn("`knowledge_units[].authority_posture`", runtime_readme)
+        self.assertIn('`knowledge_units[].kind`: `fact`', runtime_readme)
+        self.assertIn('"kind": "fact"', runtime_readme)
+        self.assertNotIn("knowledge preview", runtime_readme)
         self.assertIn("knowledge save --bindings bindings.json --decision decision.json", runtime_readme)
 
         bootstrap_text = (skill_root / "install" / "bootstrap.sh").read_text()

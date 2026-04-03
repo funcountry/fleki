@@ -19,7 +19,6 @@ from .models import ResolvedKnowledgeLayout, RuntimeInstallManifest
 def _skill_dir(repo_root: Path | str) -> Path:
     return Path(repo_root).expanduser().resolve() / "skills" / "knowledge"
 
-
 def _coerce_layout(
     repo_root: Path | str,
     layout: ResolvedKnowledgeLayout | None,

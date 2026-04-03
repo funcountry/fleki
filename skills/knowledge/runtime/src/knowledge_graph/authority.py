@@ -60,6 +60,7 @@ TOPIC_ACTIONS = {
 }
 
 KNOWLEDGE_UNIT_KINDS = {
+    "fact",
     "principle",
     "playbook",
     "decision",

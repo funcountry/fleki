@@ -1,9 +1,32 @@
 # Fleki Knowledge
 
-This repo owns the `knowledge` skill, its bundled Python runtime, and the
-on-disk knowledge graph format.
+Fleki Knowledge is a local-first semantic knowledge graph runtime for agent workflows.
 
-Install it from this checkout with one command:
+It gives you a `knowledge` CLI plus packaged skill installs for Codex, Hermes, and OpenClaw, so the same graph can be searched, traced, saved, and rebuilt across multiple agent runtimes.
+
+## Why use it
+
+- Search semantic knowledge pages instead of dumping raw files into a folder.
+- Trace claims back to source records, provenance notes, and PDF render artifacts.
+- Work with local markdown, images, and PDFs.
+- Keep the graph inspectable on disk under a normal directory tree.
+- Use one install flow to provision the CLI and the runtime-specific skill bundles.
+
+## What it does
+
+The `knowledge` CLI supports five core workflows:
+
+| Command | Purpose |
+| --- | --- |
+| `knowledge status` | Inspect the active graph root and rebuild backlog. |
+| `knowledge search` | Search semantic pages. |
+| `knowledge trace` | Follow a page or claim back to provenance and source records. |
+| `knowledge save` | Commit a semantic ingestion decision with provenance. |
+| `knowledge rebuild` | Apply page moves, lifecycle updates, and cleanup after larger changes. |
+
+## Install
+
+Install from this checkout with:
 
 ```bash
 ./install.sh
@@ -12,183 +35,162 @@ Install it from this checkout with one command:
 Requirements:
 
 - `uv`
-- `npx` if Codex is installed on the machine
+- `npx` if you want the Codex skill installed on this machine
 
-What `./install.sh` does:
-
-- regenerates `skills/knowledge/runtime/**`
-- installs the bundled `knowledge` CLI with PDF support through `docling`
-- installs Codex into `~/.agents/skills/knowledge` through the upstream `npx skills add` flow when Codex is present
-- copies the skill into every detected Hermes home at `<hermes-home>/skills/knowledge`
-- copies the skill into every detected OpenClaw root at `<openclaw-root>/skills/knowledge`
-- writes or refreshes the install manifest at the platform-standard Fleki config path
-
-Preview detected targets without writing anything:
+Useful install variants:
 
 ```bash
 ./install.sh --dry-run
+./install.sh --surface codex
+./install.sh --surface hermes --surface openclaw
 ```
 
-Limit install to one or more runtimes:
+What `./install.sh` does:
 
-```bash
-./install.sh --surface codex --surface hermes
-```
+- regenerates the bundled runtime under `skills/knowledge/runtime/**`
+- installs the `knowledge` CLI with PDF support through `docling`
+- installs or refreshes the Codex skill when Codex is present
+- copies the skill into each detected Hermes home
+- copies the skill into each detected OpenClaw root
+- writes or refreshes the install manifest under `$HOME/.fleki`
 
-Quick smoke after install:
+Verify the install:
 
 ```bash
 knowledge status --json --no-receipt
 ```
 
-The canonical mutable graph data does not live in this repo checkout and does
-not live in runtime skill directories. On this host it resolves to:
+Look for these fields in the output:
 
-```text
-~/.fleki/knowledge
-```
+- `resolved_data_root`
+- `install_manifest_path`
+- `recent_topics`
+- `pdf_render_contract_gap_count`
 
-Use `knowledge status` on any machine to confirm the real path.
+## Quick start
 
-Installing or refreshing the CLI is not the same thing as starting with an
-empty graph. A fresh install can attach to an already populated shared graph
-under `~/.fleki/knowledge`.
-
-## Naming Crosswalk
-
-- Distribution package: `fleki-knowledge-graph`
-- Python module: `knowledge_graph`
-- CLI: `knowledge`
-- Skill key: `fleki/knowledge`
-
-## Save Contract Notes
-
-- Each binding object may include `timestamp` as ISO 8601 source-observed time.
-- `knowledge_units[].temporal_scope` accepts:
-  - `evergreen`
-  - `time_bound`
-  - `ephemeral`
-- `topic_actions[].lifecycle_state` in `knowledge save` accepts:
-  - `current`
-  - `historical`
-- `knowledge rebuild` owns `stale` and delete.
-- `source_kind` stays tolerant in code. Routing is normalized like this:
-  - `pdf*` or `.pdf` -> `sources/pdf/`
-  - `image*` or common image suffixes -> `sources/images/`
-  - `codex*`, `paperclip*`, `hermes*` -> matching source family
-  - everything else, including markdown/text, -> `sources/other/`
-
-If you already have an older Fleki install under `~/Library/Application Support/Fleki`
-or `~/.config/fleki`, rerunning `./install.sh` migrates it into `~/.fleki` and
-removes the old root after verification succeeds.
-
-## Canonical Paths
-
-- `skills/knowledge/**` is the human-edited skill package.
-- `skills/knowledge/runtime/**` is the generated bundled runtime.
-- `knowledge/**` is the canonical graph data when you are working inside a test repo fixture. Production installs use the machine-level data root instead.
-
-## Manual PDF Smoke
-
-After `./install.sh`, run this exact smoke from the repo root:
+Check the active graph:
 
 ```bash
-tmp_dir="$(mktemp -d)"
-cp docs/phase6_smoke_inputs/knowledge_pdf_input.pdf "$tmp_dir/input.pdf"
-
-cat > "$tmp_dir/bindings.json" <<JSON
-[
-  {
-    "source_id": "pdf.readme.smoke",
-    "local_path": "$tmp_dir/input.pdf",
-    "source_kind": "pdf_research",
-    "authority_tier": "historical_support",
-    "sensitivity": "internal",
-    "preserve_mode": "copy",
-    "timestamp": "2026-04-03T12:00:00+00:00"
-  }
-]
-JSON
-
-cat > "$tmp_dir/decision.json" <<'JSON'
-{
-  "ingest_summary": {
-    "source_ids": ["pdf.readme.smoke"],
-    "primary_domains": ["product"],
-    "authority_tier": "historical_support",
-    "sensitivity": "internal",
-    "semantic_summary": "README smoke for bundled PDF support."
-  },
-  "source_reading_reports": [
-    {
-      "source_id": "pdf.readme.smoke",
-      "reading_mode": "direct_local_pdf",
-      "approved_helpers_used": [],
-      "readable_units": ["full text"],
-      "gaps": [],
-      "confidence_notes": []
-    }
-  ],
-  "topic_actions": [
-    {
-      "topic_path": "product/readme/pdf-smoke",
-      "page_kind": "topic",
-      "action": "create",
-      "lifecycle_state": "current",
-      "candidate_title": "README PDF Smoke",
-      "why": "Manual smoke for the installed PDF path.",
-      "knowledge_units": [
-        {
-          "kind": "principle",
-          "temporal_scope": "time_bound",
-          "target_section": {
-            "section_id": null,
-            "heading": "Current Understanding"
-          },
-          "statement": "README PDF smoke succeeded.",
-          "rationale": "The installed skill could render and ingest the fixture PDF.",
-          "authority_posture": "supported_by_internal_session",
-          "confidence": "high",
-          "evidence": [
-            {
-              "source_id": "pdf.readme.smoke",
-              "locator": "manual smoke",
-              "notes": ""
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "provenance_notes": [
-    {
-      "source_ids": ["pdf.readme.smoke"],
-      "bundle_rationale": null,
-      "title": "README PDF smoke provenance",
-      "summary": "Fixture PDF used to confirm bundled PDF support.",
-      "source_reading_summary": "Read directly from the local filesystem.",
-      "what_this_source_contributes": ["Proof that PDF rendering worked."],
-      "knowledge_sections_touched": [
-        {
-          "topic_path": "product/readme/pdf-smoke",
-          "section_heading": "Current Understanding"
-        }
-      ],
-      "sensitivity_notes": "internal"
-    }
-  ],
-  "conflicts_or_questions": [],
-  "asset_actions": [],
-  "recommended_next_step": {
-    "action": "queue_rebuild_topic",
-    "scope": ["product"],
-    "why": "Refresh semantic neighbors later if needed."
-  }
-}
-JSON
-
-knowledge save --json --bindings "$tmp_dir/bindings.json" --decision "$tmp_dir/decision.json"
+knowledge status --json --no-receipt
 ```
 
-That smoke should create a PDF render markdown and render manifest under the
-resolved machine data root in `sources/pdf/`.
+Search what is already known:
+
+```bash
+knowledge search "customer.io"
+```
+
+Trace a topic back to its sources:
+
+```bash
+knowledge trace product/customer-io/current-setup --json --no-receipt
+```
+
+Commit a save from local files:
+
+```bash
+knowledge save --bindings bindings.json --decision decision.json --json
+```
+
+Apply a rebuild plan:
+
+```bash
+knowledge rebuild --plan rebuild.json --json
+```
+
+## Save workflow
+
+`knowledge save` is the semantic write step.
+
+For a minimal valid save payload, start from the checked-in example templates:
+
+- [skills/knowledge/references/examples/minimal-save-bindings.json](skills/knowledge/references/examples/minimal-save-bindings.json)
+- [skills/knowledge/references/examples/minimal-save-decision.json](skills/knowledge/references/examples/minimal-save-decision.json)
+
+A few usage-critical rules:
+
+- Use `fact` for plain observations unless another kind adds stronger semantic meaning.
+- `ingest_summary.authority_tier` and `knowledge_units[].authority_posture` are different enums. Do not swap them.
+- `timestamp` is optional and records source-observed time.
+- `knowledge rebuild` owns `stale` and delete.
+
+For the full save contract, see [skills/knowledge/references/save-ingestion.md](skills/knowledge/references/save-ingestion.md).
+
+## How data is stored
+
+The canonical mutable graph is not stored in this repo checkout. By default it lives under:
+
+```text
+$HOME/.fleki/knowledge
+```
+
+Installing or refreshing the CLI does not clear that graph. A fresh install can still attach to an already populated shared root.
+
+The on-disk layout is simple:
+
+- `topics/` holds semantic pages
+- `provenance/` holds source-backed notes
+- `sources/` holds copied files or durable pointers
+- `receipts/` holds command receipts
+
+Copied PDFs also persist a source-adjacent render bundle:
+
+- `.render.md`
+- `.render.manifest.json`
+- optional `.assets/`
+
+If an older PDF source record predates that render contract, `knowledge trace` surfaces the gap and `knowledge status` reports it through `pdf_render_contract_gap_count`.
+
+## Runtime integrations
+
+This project is designed to work across multiple agent runtimes while keeping one shared graph.
+
+- Codex: installs the skill under `~/.agents/skills/knowledge`
+- Hermes: copies the skill into each detected Hermes home
+- OpenClaw: copies the skill into each detected OpenClaw root
+
+The standalone CLI is still useful on its own. The integrations mainly ensure those runtimes can use the same `knowledge` workflow and shared data root.
+
+## Maintenance and troubleshooting
+
+If something looks wrong, start here:
+
+```bash
+knowledge status --json --no-receipt
+```
+
+Common fixes:
+
+- Repair an installed bundle from the bundle itself:
+
+  ```bash
+  bash skills/knowledge/install/bootstrap.sh
+  ```
+
+- Backfill older PDF source records that predate the render-or-omission contract:
+
+  ```bash
+  .venv/bin/python scripts/backfill_pdf_render_contract.py --json
+  ```
+
+Notes:
+
+- A non-empty graph after install is expected if `$HOME/.fleki/knowledge` already existed.
+
+## Repo map
+
+If you are working in this repo directly:
+
+- `src/knowledge_graph/**` is the Python implementation
+- `skills/knowledge/**` is the human-edited skill package
+- `skills/knowledge/runtime/**` is the generated bundled runtime
+- `knowledge/README.md` describes the on-disk graph tree
+
+## Learn more
+
+- [skills/knowledge/install/README.md](skills/knowledge/install/README.md)
+- [skills/knowledge/references/save-ingestion.md](skills/knowledge/references/save-ingestion.md)
+- [skills/knowledge/references/search-and-trace.md](skills/knowledge/references/search-and-trace.md)
+- [skills/knowledge/references/examples-and-validation.md](skills/knowledge/references/examples-and-validation.md)
+- [knowledge/README.md](knowledge/README.md)

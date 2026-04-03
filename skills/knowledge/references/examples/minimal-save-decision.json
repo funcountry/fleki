@@ -1,47 +1,3 @@
-# Fleki Knowledge Runtime
-
-This directory is the generated Python runtime that ships inside the `knowledge` skill.
-It lets the installed skill install and refresh the `knowledge` CLI without depending on a Fleki repo checkout.
-
-Naming crosswalk:
-- distribution package: `fleki-knowledge-graph`
-- Python module: `knowledge_graph`
-- CLI: `knowledge`
-- skill key: `fleki/knowledge`
-
-Persistent-root note:
-- installing or refreshing the CLI does not clear an existing graph
-- the shared graph root resolves under `~/.fleki/knowledge` unless an install manifest says otherwise
-
-Save contract notes:
-- bindings may include `timestamp` as ISO 8601 source-observed time
-- `ingest_summary.authority_tier`: `live_doctrine`, `raw_runtime`, `historical_support`, `generated_mirror`, `mixed`
-- `knowledge_units[].authority_posture`: `live_doctrine`, `supported_by_runtime`, `supported_by_internal_session`, `tentative`, `mixed`
-- do not swap `authority_tier` and `authority_posture`
-- `knowledge_units[].kind`: `fact`, `principle`, `playbook`, `decision`, `pattern`, `regression`, `glossary`, `question`
-- `knowledge_units[].temporal_scope`: `evergreen`, `time_bound`, `ephemeral`
-- `topic_actions[].lifecycle_state`: `current` or `historical`
-- `knowledge rebuild` owns `stale` and delete
-
-Minimal valid save example:
-
-Create `bindings.json`:
-
-```json
-[
-  {
-    "source_id": "note.customerio.current",
-    "local_path": "/absolute/path/to/customer-io.md",
-    "source_kind": "markdown_doc",
-    "authority_tier": "live_doctrine",
-    "timestamp": "2026-04-03T12:00:00+00:00"
-  }
-]
-```
-
-Create `decision.json`:
-
-```json
 {
   "ingest_summary": {
     "source_ids": [
@@ -128,26 +84,3 @@ Create `decision.json`:
     "why": "Refresh nearby semantic neighbors later if needed."
   }
 }
-```
-
-Apply it with:
-
-```bash
-knowledge save --bindings bindings.json --decision decision.json
-```
-
-Included behavior:
-- `knowledge status`
-- `knowledge search`
-- `knowledge trace`
-- `knowledge save`
-- `knowledge rebuild`
-- bundled PDF render support through `docling`
-
-Install the CLI from this directory:
-
-```bash
-uv tool install --force .
-```
-
-This directory is generated. Edit `src/knowledge_graph/**`, `pyproject.toml`, or `skills/knowledge/**` in Fleki, then regenerate the runtime bundle.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 import unittest
 
 from common import copy_fixture_pdf, make_temp_repo, sample_save_decision
@@ -7,9 +9,6 @@ from knowledge_graph import (
     RebuildPageUpdate,
     RebuildPlan,
     SourceBinding,
-    codex_runtime_manifest,
-    hermes_runtime_manifest,
-    openclaw_runtime_manifest,
 )
 
 
@@ -81,12 +80,7 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertTrue(trace["provenance"])
         self.assertTrue(trace["source_records"])
 
-        runtime_manifests = [
-            codex_runtime_manifest(root, layout=repo.layout),
-            hermes_runtime_manifest(root, layout=repo.layout),
-            openclaw_runtime_manifest(root, layout=repo.layout),
-        ]
-        status = repo.status(runtime_manifests=runtime_manifests)
+        status = repo.status()
         self.assertIn("doctrine", status["rebuild_pending"])
         self.assertEqual(status["unresolved_contradictions"], 0)
         self.assertIn("doctrine/shared-agent-learnings", status["hot_topics"])
@@ -101,8 +95,8 @@ class SearchTraceStatusTest(unittest.TestCase):
         self.assertEqual(status["install_manifest_path"], str(repo.install_manifest_path))
         self.assertTrue(status["install_manifest_present"])
         self.assertFalse(status["legacy_repo_graph_detected"])
-        self.assertTrue(status["runtime_agreement"]["codex"]["data_root_match"])
-        self.assertTrue(status["runtime_agreement"]["hermes"]["install_manifest_path_match"])
+        self.assertNotIn("runtime_agreement", status)
+        self.assertNotIn("runtime_agreement_state", status)
 
     def test_search_prefers_topical_match_over_path_noise(self) -> None:
         temp_dir, root, repo = make_temp_repo()
@@ -280,6 +274,60 @@ class SearchTraceStatusTest(unittest.TestCase):
         trace = repo.trace("product/customer-io/legacy-setup")
         self.assertEqual(trace["effective_lifecycle_state"], "superseded")
         self.assertEqual(trace["replacement_paths"], ["product/customer-io/current-setup"])
+
+    def test_trace_and_status_surface_legacy_pdf_render_contract_gap(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        pdf_path = copy_fixture_pdf(root, "legacy-gap.pdf")
+        binding = SourceBinding(
+            source_id="pdf.legacy.gap",
+            local_path=pdf_path,
+            source_kind="pdf_research",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/multimodal-runtime-validation",
+            candidate_title="Multimodal Runtime Validation",
+            recommended_scope=["knowledge-system"],
+        )
+        decision["source_reading_reports"][0]["reading_mode"] = "direct_local_pdf"
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        manifest_path = next((repo.data_root / "sources" / "pdf").glob("*.record.json"))
+        manifest = json.loads(manifest_path.read_text())
+        manifest.pop("source_family", None)
+        render_manifest_path = manifest.pop("render_manifest_relative_path")
+        render_markdown_path = manifest.pop("render_relative_path")
+        manifest.pop("render_eligibility", None)
+        manifest.pop("render_omission_reason", None)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        (repo.data_root / render_manifest_path).unlink()
+        (repo.data_root / render_markdown_path).unlink()
+        assets_dir = (repo.data_root / render_markdown_path).with_suffix(".assets")
+        if assets_dir.exists():
+            shutil.rmtree(assets_dir)
+
+        trace = repo.trace("knowledge-system/multimodal-runtime-validation")
+        self.assertEqual(trace["render_manifests"], [])
+        self.assertEqual(trace["render_artifacts"], [])
+        self.assertEqual(trace["render_omissions"], [])
+        self.assertEqual(
+            trace["render_contract_gaps"],
+            [
+                {
+                    "source_id": "pdf.legacy.gap",
+                    "source_record": manifest_path.relative_to(repo.data_root).as_posix(),
+                    "gap_reason": "legacy_missing_render_contract",
+                }
+            ],
+        )
+
+        status = repo.status()
+        self.assertEqual(status["pdf_rendered_sources"], 0)
+        self.assertEqual(status["pdf_render_omitted_sources"], 0)
+        self.assertEqual(status["pdf_render_contract_gap_count"], 1)
 
 
 if __name__ == "__main__":
