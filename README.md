@@ -1,13 +1,13 @@
 # Fleki Knowledge
 
-Fleki Knowledge is a local-first semantic knowledge graph runtime for agent workflows.
+Fleki Knowledge is a local-first knowledge graph runtime for agent workflows.
 
 It gives you a `knowledge` CLI plus packaged skill installs for Codex, Hermes, and OpenClaw, so the same graph can be searched, traced, saved, and rebuilt across multiple agent runtimes.
 
 ## Why use it
 
-- Search semantic knowledge pages instead of dumping raw files into a folder.
-- Trace claims back to source records, provenance notes, and PDF render artifacts.
+- Search for exact or literal candidate pages instead of dumping raw files into a folder.
+- Trace exact refs back to source records, provenance notes, and PDF render artifacts.
 - Work with local markdown, images, and PDFs.
 - Keep the graph inspectable on disk under a normal directory tree.
 - Use one install flow to provision the CLI and the runtime-specific skill bundles.
@@ -19,8 +19,8 @@ The `knowledge` CLI supports five core workflows:
 | Command | Purpose |
 | --- | --- |
 | `knowledge status` | Inspect the active graph root and rebuild backlog. |
-| `knowledge search` | Search semantic pages. |
-| `knowledge trace` | Follow a page or claim back to provenance and source records. |
+| `knowledge search` | List deterministic candidate pages and `trace_ref` handoffs. |
+| `knowledge trace` | Follow an exact page or section ref back to provenance and source records. |
 | `knowledge save` | Commit a semantic ingestion decision with provenance. |
 | `knowledge rebuild` | Apply page moves, lifecycle updates, and cleanup after larger changes. |
 
@@ -89,6 +89,7 @@ Look for these fields in the output:
 - `resolved_data_root`
 - `install_manifest_path`
 - `recent_topics`
+- `ingests_with_confidence_caveats`
 - `pdf_render_contract_gap_count`
 
 ## Review wiki and Quartz
@@ -165,18 +166,28 @@ knowledge status --json --no-receipt
 Search what is already known:
 
 ```bash
-knowledge search "customer.io"
+knowledge search "customer.io" --json --no-receipt
 ```
 
 If nothing matches, `knowledge search` returns zero results. It should not invent a nearest answer.
 
-Trace a topic back to its sources:
+Then trace the returned `trace_ref`:
 
 ```bash
-knowledge trace product/customer-io/current-setup --json --no-receipt
+knowledge trace <trace_ref> --json --no-receipt
 ```
 
-Best-effort claim text trace is stricter than path trace. It should only return a result when it can narrow to a real section and evidence.
+Public `trace` inputs are exact refs only:
+
+- `knowledge_id`
+- `knowledge_id#section_id`
+- `current_path`
+- page alias
+- `current_path#section_alias`
+
+Section aliases use deterministic normalization only. `current_understanding`, `current-understanding`, and `Current Understanding` resolve to the same stored alias. `knowledge_id#section_id` remains the stable machine ref.
+
+Page-level `knowledge trace <page>` does not guess a best section. It returns aggregate page lineage plus a `supported_sections` summary so the agent can inspect the exact section refs.
 
 Commit a save from local files:
 
@@ -204,7 +215,9 @@ A few usage-critical rules:
 
 - Use `fact` for plain observations unless another kind adds stronger semantic meaning.
 - `ingest_summary.authority_tier` and `knowledge_units[].authority_posture` are different enums. Do not swap them.
-- `timestamp` is optional and records source-observed time.
+- Each binding must declare `source_family`. Do not make the app infer it from `source_kind` or file suffixes.
+- Each binding must declare `timestamp` as ISO 8601 source-observed time.
+- If source-observed time is unknown, stop and say that plainly instead of inventing one.
 - `knowledge rebuild` owns `stale` and delete.
 
 For the full save contract, see [skills/knowledge/references/save-ingestion.md](skills/knowledge/references/save-ingestion.md).
@@ -219,12 +232,18 @@ $HOME/.fleki/knowledge
 
 Installing or refreshing the CLI does not clear that graph. A fresh install can still attach to an already populated shared root.
 
+The checked-in `knowledge/**` tree in this repo is reference content and a migration seed. It is not the live mutable graph.
+
 The on-disk layout is simple:
 
 - `topics/` holds semantic pages
 - `provenance/` holds source-backed notes
 - `sources/` holds copied files or durable pointers
+- `assets/` holds derived-only render artifacts or extracted files
 - `receipts/` holds command receipts
+- `search/` is optional support state and is not required for correctness
+
+`topics/indexes/**` and `search/` are support artifacts only. `knowledge search` and `knowledge trace` must work from the live graph data, not from a hidden index.
 
 Copied PDFs also persist a source-adjacent render bundle:
 
@@ -269,6 +288,7 @@ Common fixes:
 Notes:
 
 - A non-empty graph after install is expected if `$HOME/.fleki/knowledge` already existed.
+- `ingests_with_reading_limits` counts unread or missing content. `ingests_with_confidence_caveats` counts operator caveats that do not imply unread content.
 
 ## Repo map
 
@@ -277,7 +297,7 @@ If you are working in this repo directly:
 - `src/knowledge_graph/**` is the Python implementation
 - `skills/knowledge/**` is the human-edited skill package
 - `skills/knowledge/runtime/**` is the generated bundled runtime
-- `knowledge/README.md` describes the on-disk graph tree
+- `knowledge/README.md` describes the checked-in reference tree, not the live graph root
 
 ## Learn more
 

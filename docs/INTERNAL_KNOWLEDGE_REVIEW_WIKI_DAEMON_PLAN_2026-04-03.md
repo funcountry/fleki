@@ -18,16 +18,17 @@ related:
 # TL;DR
 
 - **Outcome:** Add an optional review wiki that runs on this machine, rebuilds automatically when exported knowledge changes, and lets humans browse the accumulated knowledge graph comfortably without turning the viewer into a writer.
-- **Problem:** The current graph is correct and inspectable, but it mixes semantic pages, provenance notes, raw source records, receipts, and render artifacts in one tree. That works for agents and traceability, but it is a poor and risky direct input for a human review site.
-- **Approach:** Keep the live graph under the resolved Fleki data root as the only source of truth, port the existing knowledge base in place instead of supporting split formats or split content paths, cut the markdown page format over to Quartz-friendly YAML frontmatter, export only an allowlisted browse tree into `state_root`, and run a lightweight local daemon that rebuilds Quartz only when the exported content digest changes.
+- **Problem:** The current graph is correct and inspectable, but it mixes semantic pages, provenance notes, preserved artifacts, receipts, and render bundles in one tree. That works for agents and traceability, but it is a poor and risky direct input for a human review site.
+- **Approach:** Keep the live graph under the resolved Fleki data root as the only source of truth, port the existing knowledge base in place instead of supporting split formats or split content paths, cut the markdown page format over to Quartz-friendly YAML frontmatter, export an allowlisted browse tree into `state_root`, and run a lightweight local daemon that rebuilds Quartz only when the exported content digest changes. Exported topic and provenance pages stay knowledge-first, but they also show linked artifact detail pages directly under the knowledge they support.
 - **Plan:** First hard-cut the existing knowledge base to the new canonical page format and metadata rules. Then add a review-wiki exporter plus digest gate. Then add the daemon and native per-user service install for macOS and Linux. Stop there.
 - **Non-negotiables:**
   - The live knowledge graph under `resolved_data_root` remains the only writer.
   - The review wiki is disposable derived state under `state_root`.
   - The existing knowledge base is ported to the new canonical format; Fleki does not keep old and new page formats alive in parallel.
   - Quartz must never read the raw graph tree directly.
-  - Raw `sources/**`, `receipts/**`, `.record.json`, and secret-bearing assets are excluded from the public review tree by default.
-  - Render markdown and render assets do not ship in the review wiki in v1.
+  - Quartz never reads the raw `sources/**` tree, `receipts/**`, or `.record.json` files directly.
+  - The exporter never dumps the raw source tree wholesale. It exports only topic pages, provenance pages, artifact detail pages, and the specific preserved files those artifact pages link to.
+  - Artifact detail pages may link to copied files, pointer records, and PDF render bundle files when they are the preserved artifact path for the knowledge being shown.
   - Rebuild correctness is decided by Fleki's own export digest, not by launchd or systemd file-watch behavior.
   - The browse model stays semantic and provenance-aware, not source-family-first.
   - The canonical markdown format becomes one thing, not mixed JSON and YAML frontmatter in parallel.
@@ -35,25 +36,6 @@ related:
   - There is no separate service-management CLI in v1.
   - The review-site implementation does not ship inside the agent skill runtime bundle.
   - When a simpler required rule will work, prefer making it required over adding split paths, optional compatibility modes, or dual support logic.
-
-<!-- arch_skill:block:implementation_audit:start -->
-# Implementation Audit (authoritative)
-Date: 2026-04-03
-Verdict (code): COMPLETE
-Manual QA: pending (non-blocking)
-
-## Code blockers (why code is not done)
-- None.
-
-## Reopened phases (false-complete fixes)
-- None.
-
-## Missing items (code gaps; evidence-anchored; no tables)
-- None.
-
-## Non-blocking follow-ups (manual QA / screenshots / human verification)
-- Run `./install.sh --review-wiki` on one Linux host, open `http://127.0.0.1:4151`, confirm rebuild on exported-content changes, confirm no rebuild on receipt-only changes, and then remove it with `./install.sh --remove-review-wiki`.
-<!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
 <!--
@@ -69,7 +51,7 @@ note: This is a warn-first checklist only. It should not hard-block execution.
 # 0) Holistic North Star
 
 ## 0.1 The claim (falsifiable)
-> If Fleki ports the existing knowledge base directly to one new canonical page format and one required review-wiki export path, then adds an optional local review wiki system that exports only semantic review content from the live knowledge graph into a separate Quartz build tree, rebuilds only when that exported content actually changes, and installs as a native per-user background service on macOS or Linux, internal reviewers on this machine will be able to browse topics, indexes, and linked provenance clearly without Quartz becoming the canonical storage or raw-source exposure path and without Fleki carrying split support logic.
+> If Fleki ports the existing knowledge base directly to one new canonical page format and one required review-wiki export path, then adds an optional local review wiki system that exports knowledge-first review content plus linked artifact views from the live knowledge graph into a separate Quartz build tree, rebuilds only when that exported content actually changes, and installs as a native per-user background service on macOS or Linux, internal reviewers on this machine will be able to browse topics, indexes, linked provenance, and preserved artifacts clearly without Quartz becoming the canonical storage or raw-source exposure path and without Fleki carrying split support logic.
 
 ## 0.2 In scope
 - UX surfaces (what users will see change):
@@ -77,6 +59,7 @@ note: This is a warn-first checklist only. It should not hard-block execution.
   - Human-readable home and landing pages for semantic topics.
   - Browse-oriented indexes such as by-topic, recent changes, and unresolved questions.
   - Provenance drill-down from topic pages into supporting notes.
+  - Artifact detail pages linked directly below topic and provenance content.
   - A simple repo-owned install story on macOS and Linux for enabling or disabling the review wiki service on this machine.
 - Technical scope (what code/docs/packaging will change):
   - Canonical topic and provenance markdown frontmatter moves from JSON to Quartz-compatible YAML by porting the existing pages in place.
@@ -90,14 +73,13 @@ note: This is a warn-first checklist only. It should not hard-block execution.
   - Editing the knowledge graph through the review site.
   - A public internet-facing knowledge site.
   - A source-family-first information architecture such as `pdf/`, `hermes/`, or `codex/` folders as the main browse experience.
-  - Raw receipts, copied source archives, or secret-bearing assets as ordinary review content.
+  - Raw receipts or the entire raw source tree as ordinary review content.
 - Technical scope (explicit exclusions):
   - Letting Quartz consume `resolved_data_root` directly.
   - A second semantic storage model that lives only inside the site generator.
   - Networked multi-user serving, authentication, or fleet management.
   - A fallback JSON-frontmatter path kept alive after YAML cutover.
   - Split support for old and new graph page formats or parallel export paths.
-  - Render-markdown or render-asset export in v1.
   - A review-wiki config file in v1.
   - A separate service-management CLI in v1.
   - A filesystem-trigger-only correctness model based on `launchd WatchPaths` or `systemd.path`.
@@ -105,11 +87,11 @@ note: This is a warn-first checklist only. It should not hard-block execution.
 
 ## 0.4 Definition of done (acceptance evidence)
 - The live graph remains under the resolved Fleki data root, and the review site can be deleted and rebuilt from it.
-- Topic pages, linked provenance notes, and indexes render as readable Quartz pages with working internal navigation.
+- Topic pages, linked provenance notes, artifact detail pages, and indexes render as readable Quartz pages with working internal navigation.
 - The review wiki rebuilds automatically after a save or rebuild that changes exported semantic content.
 - The review wiki does not rebuild when only excluded graph state changes, such as new receipts that do not affect exported pages.
-- The staged site tree does not expose raw `sources/**`, raw record JSON, or receipts by default.
-- The staged site tree does not expose render markdown, render assets, or raw PDFs in v1.
+- The staged site tree does not expose the raw `sources/**` tree, raw record JSON, or receipts by default.
+- The staged site tree exposes only the specific preserved files linked from exported artifact detail pages.
 - macOS and Linux operators can install or remove the background service with the repo-owned installer.
 - Smallest credible evidence:
   - frontmatter migration tests prove all canonical page writers and readers round-trip YAML
@@ -123,10 +105,9 @@ note: This is a warn-first checklist only. It should not hard-block execution.
 - The review wiki content tree and built site live under `state_root` and are disposable.
 - `state_root` holds review-wiki derived state; `data_root` holds knowledge; this feature does not use a review-wiki config file in `config_root` in v1.
 - Quartz never points at the raw graph tree.
-- Only allowlisted semantic review content is exported.
+- Only allowlisted review content is exported.
 - Provenance is first-class in the review UI, but semantic topics remain primary.
-- Raw copied sources and receipts are excluded by default.
-- Render markdown, render assets, and raw PDFs are excluded by default in v1.
+- Raw source trees and receipts are excluded by default, but linked artifact files are exported selectively through artifact detail pages.
 - YAML frontmatter becomes the only canonical markdown metadata format for graph pages.
 - The existing knowledge base is ported directly to the new canonical format; Fleki does not maintain split old-versus-new support paths.
 - The daemon either rebuilds correctly from a deterministic export digest or fails loudly and preserves the last good built site.
@@ -244,7 +225,7 @@ note: This is a warn-first checklist only. It should not hard-block execution.
 ## 3.3 Open questions from research
 - No blocking open questions remain from research for the first implementation slice.
 - This deep-dive pass resolves the previously open branches as follows:
-  - Do not export render markdown, render assets, or raw PDFs in v1.
+  - Do not export the raw source tree in v1. Export only the copied files, pointer records, and PDF render bundle files that generated artifact detail pages link to.
   - Use a pure polling plus digest-gating loop in v1. Do not add filesystem nudges or OS-native path watchers in the first cut.
   - Keep the Quartz template and service-file templates as repo-owned install assets outside `skills/knowledge/runtime`.
   - Do not add a review-wiki config file in v1. Use fixed localhost defaults in code and service templates.
@@ -361,7 +342,7 @@ agent
     - `topics/**/*.md`
     - `topics/indexes/**/*.md`
     - `provenance/**/*.md`
-  - It excludes `sources/**`, `receipts/**`, `.record.json`, raw copied assets, raw PDFs, render markdown, render assets, and other non-exported state by default.
+  - It excludes `receipts/**`, `.record.json`, and any unlinked raw source state by default.
   - It normalizes the exported browse set and computes a deterministic digest.
   - If the digest changed, it materializes the Quartz `content/` tree, runs a static Quartz build, and atomically replaces the built `public/` tree.
   - If the digest did not change, it skips export and build work.
@@ -383,7 +364,7 @@ agent
 - Everything else that could have become a toggle in v1 is fixed by code policy instead:
   - provenance is first-class and always exported
   - receipts are never exported
-  - render markdown, raw PDFs, and render assets are never exported in v1
+  - preserved artifact files are exported only when generated artifact detail pages link to them
 - New review-wiki runtime modules under `src/knowledge_graph/review_wiki/`:
   - layout helpers derived from `ResolvedKnowledgeLayout`
   - exporter that maps graph pages into Quartz content
@@ -509,15 +490,6 @@ Provenance page:
 
 ## Phase 1 — Hard-cut page format and port the existing KB
 
-Status: COMPLETE
-
-Completed work:
-- Cut the canonical frontmatter codec over to YAML and added a migration-only JSON reader for one-time graph porting.
-- Ported the checked-in KB topic, provenance, and receipt markdown files to YAML and rewrote legacy `knowledge/...` path prefixes in the reference tree.
-- Added frontmatter regression tests and updated layout migration coverage for YAML output.
-- Removed the always-on `port_graph_frontmatter(self.knowledge_root)` call from normal repository startup so ordinary reads no longer rewrite legacy JSON pages in place.
-- Tightened graph markdown loads to fail loudly on invalid frontmatter instead of silently skipping bad topic, provenance, or receipt pages.
-
 * Goal:
   Make one canonical markdown metadata format real everywhere the graph writes or reads human-browseable pages.
 * Work:
@@ -555,28 +527,20 @@ Completed work:
 
 ## Phase 2 — Build the filtered export and digest gate
 
-Status: COMPLETE
-
-Completed work:
-- Added the `review_wiki` package with derived-state layout helpers, a filtered exporter, and a deterministic digest helper.
-- Added the repo-owned Quartz overlay under `templates/review-wiki/`.
-- Kept review-wiki code out of the generated agent runtime bundle and added tests that enforce that exclusion.
-
 * Goal:
-  Produce a deterministic Quartz content tree from the live graph without exposing raw evidence or adding a second knowledge model.
+  Produce a deterministic Quartz content tree from the live graph without exposing the raw graph tree or adding a second knowledge model.
 * Work:
   - Create the new review-wiki package under `/Users/agents/workspace/fleki/src/knowledge_graph/review_wiki/`.
   - Add `/Users/agents/workspace/fleki/src/knowledge_graph/review_wiki/exporter.py` to export only:
     - `topics/**/*.md`
     - `topics/indexes/**/*.md`
     - `provenance/**/*.md`
-  - Enforce the export deny set in code:
-    - `sources/**`
-    - `receipts/**`
-    - `.record.json`
-    - raw PDFs
-    - render markdown
-    - render assets
+    - generated `artifacts/**/*.md`
+  - Enforce the export allowlist in code:
+    - export only the specific preserved files linked from generated artifact pages
+    - never export `receipts/**`
+    - never export `.record.json`
+    - never dump the whole `sources/**` tree
   - Add `/Users/agents/workspace/fleki/src/knowledge_graph/review_wiki/digest.py` to compute a deterministic digest over exported semantic content and skip rebuild work when the exported result would not change.
   - Add the repo-owned Quartz template under `/Users/agents/workspace/fleki/templates/review-wiki/` with the minimum files needed to build and serve the exported content tree.
   - Sync the template into `<state_root>/review-wiki/quartz/` as derived state rather than editing it in place under source control.
@@ -591,6 +555,7 @@ Completed work:
   - Add one short exporter comment at the allowlist boundary and one short digest comment explaining why semantic digesting, not file watching, decides rebuilds.
 * Exit criteria:
   - The exporter can materialize a Quartz content tree from the live graph.
+  - The exported tree shows artifacts directly below the knowledge through generated artifact detail pages.
   - Excluded graph state is not present in the exported tree.
   - Receipt-only and other excluded changes do not trigger rebuild work.
 * Rollback:
@@ -598,25 +563,6 @@ Completed work:
   - Leave the canonical graph untouched.
 
 ## Phase 3 — Add the local daemon and native install path
-
-Status: COMPLETE
-
-Completed work:
-- Added the foreground review-wiki daemon with digest-gated export, Quartz build staging, atomic public-site replacement, and local HTTP serving.
-- Added launchd and systemd user-service renderers plus installer support for `--review-wiki` and `--remove-review-wiki`.
-- Added Node/npm review-wiki preflight checks, overlay materialization, and README documentation for the local review site.
-- Completed the real macOS machine smoke for install, build, local serving, and auto-regeneration after a reversible topic-page edit.
-- Fixed the real installer and runtime issues uncovered by that smoke:
-  - switched the Quartz pin from a hanging git dependency to a direct GitHub tarball
-  - ported existing graph frontmatter explicitly during install before starting the daemon
-  - copied the Quartz runtime scaffold into the workspace and aligned the local config imports
-  - replaced the broken Python 3.12 `http.server` path on this host with a Fleki-owned raw-socket static file server
-
-Manual QA (non-blocking):
-- Install the feature with `./install.sh --review-wiki` on one Linux host.
-- Open `http://127.0.0.1:4151` and confirm the site serves.
-- Change excluded graph content such as receipts and confirm no rebuild.
-- Remove the feature with `./install.sh --remove-review-wiki`.
 
 * Goal:
   Make the review site installable on a machine and keep it regenerated automatically from exported semantic changes.
@@ -710,8 +656,3 @@ Rollout is intentionally small.
 - 2026-04-03: Removed extra optional reviewer features from the v1 plan. Reason: the minimum useful version is just YAML page porting, filtered export of topic/index/provenance pages, polling plus digest gating, a fixed localhost daemon, and repo-owned native service install.
 - 2026-04-03: Locked the execution order as three phases: YAML cutover first, filtered export plus digest second, daemon plus native install third. Reason: this is the smallest depth-first sequence that keeps the graph stable while the review site comes online.
 - 2026-04-03: Locked the installer interface to `./install.sh --review-wiki` and `./install.sh --remove-review-wiki`. Reason: the feature needs one explicit repo-owned on/off path, and fixed flag names are simpler than a second CLI or a config-driven installer.
-- 2026-04-03: Implemented the Quartz workspace as a small repo-owned overlay plus a pinned Quartz Git dependency instead of vendoring the full Quartz source tree. Reason: it keeps the Fleki repo smaller while still pinning the renderer version and letting the installer materialize a full build workspace under `state_root`.
-- 2026-04-03: Removed the startup-time JSON frontmatter auto-port and made graph markdown loads fail loudly on invalid frontmatter. Reason: the plan requires one canonical YAML path in normal operation, and silently skipping bad pages would hide broken graph state instead of surfacing it.
-- 2026-04-03: Changed the Quartz install pin from a git dependency to a direct GitHub tarball and copied the installed Quartz scaffold into the workspace root during install. Reason: the real macOS install hung on the git dependency path, and Quartz expects a local `quartz/` scaffold in the build workspace.
-- 2026-04-03: Added an explicit graph frontmatter port step to the installer before the review daemon starts. Reason: the live installed graph still contained legacy JSON-frontmatter pages, and normal runtime remains strict by plan.
-- 2026-04-03: Replaced the review daemon's `http.server` serving path with a Fleki-owned raw-socket static server. Reason: the real Python 3.12 runtime on this macOS host built Quartz correctly but failed to serve even a trivial `http.server`, while raw sockets worked correctly.

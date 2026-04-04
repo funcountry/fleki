@@ -17,6 +17,8 @@ class ContractsTest(unittest.TestCase):
 
         bindings_payload = json.loads(bindings_path.read_text())
         decision_payload = json.loads(decision_path.read_text())
+        self.assertTrue(bindings_payload)
+        self.assertTrue(all("source_family" in item for item in bindings_payload))
         source_bindings = {
             item["source_id"]: object()
             for item in bindings_payload

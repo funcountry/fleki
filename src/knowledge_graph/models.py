@@ -10,9 +10,9 @@ class SourceBinding:
     source_id: str
     local_path: Path
     source_kind: str
+    source_family: str
     authority_tier: str = "historical_support"
     sensitivity: str = "internal"
-    preserve_mode: str = "copy"
     timestamp: Optional[str] = None
     notes: Optional[str] = None
 

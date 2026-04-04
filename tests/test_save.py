@@ -22,6 +22,7 @@ class SaveWorkflowTest(unittest.TestCase):
                 source_id="note.internal.lesson",
                 local_path=note_path,
                 source_kind="markdown_doc",
+                source_family="other",
                 authority_tier="live_doctrine",
                 timestamp="2026-03-31T10:00:00+00:00",
             ),
@@ -29,6 +30,7 @@ class SaveWorkflowTest(unittest.TestCase):
                 source_id="pdf.internal.lesson",
                 local_path=pdf_path,
                 source_kind="pdf_research",
+                source_family="pdf",
                 authority_tier="historical_support",
                 timestamp="2026-04-01T09:00:00+00:00",
             ),
@@ -124,6 +126,8 @@ class SaveWorkflowTest(unittest.TestCase):
             source_id="repo.readme",
             local_path=source_path,
             source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],

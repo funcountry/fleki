@@ -6,6 +6,11 @@ Use this contract when a local agent is saving source material into the semantic
 
 Artifacts go in, semantic knowledge plus provenance come out.
 
+Every save must leave behind one durable artifact target.
+- non-secret sources are copied into Fleki storage
+- `secret_pointer_only` sources are preserved as pointer-backed artifacts
+- callers do not choose the storage mode
+
 The persistent thing we care about is the semantic graph, not the source-family filing system.
 
 `knowledge save` applies immediately. There is no preview, validate-only, or dry-run save path in this workflow.
@@ -17,6 +22,8 @@ The persistent thing we care about is the semantic graph, not the source-family 
 - For PDFs, use direct inspection only when the active runtime surface exposes documented file input.
 - Do not browse the internet.
 - Do not invent helper scripts or harnesses.
+- Each binding must declare `source_family`. Do not infer it from `source_kind` or file suffixes.
+- Each binding must declare `timestamp` as ISO 8601 source-observed time.
 
 ## Required output shape
 
@@ -60,7 +67,7 @@ Return an ingestion decision that includes:
   - `glossary`
   - `question`
 
-- Each binding object may include `timestamp` as ISO 8601 source-observed time.
+- Each binding object must include `timestamp` as ISO 8601 source-observed time.
 - Each knowledge unit may include `temporal_scope`:
   - `evergreen`
   - `time_bound`
@@ -75,7 +82,7 @@ Return an ingestion decision that includes:
 - Every source must have a reading report.
 - Every non-trivial knowledge unit must have evidence.
 - Use `fact` for plain observations unless a stronger semantic kind fits better.
-- Unknown time should stay unknown. Do not invent `current` or a made-up source-observed timestamp.
+- If source-observed time is unknown, stop and say so plainly. Do not invent `current` or a made-up source-observed timestamp.
 - Topic paths must be semantic, never source-family-first.
 - Provenance notes must be one-per-source or explicitly bundled with rationale.
 - Helper approvals must be exact, explicit, and timeboxed.

@@ -4,12 +4,6 @@ import re
 from collections import OrderedDict
 from typing import Iterable, List, MutableMapping, OrderedDict as OrderedDictType, Tuple
 
-TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-
-def tokenize(value: str) -> List[str]:
-    return TOKEN_RE.findall(value.lower())
-
 
 def parse_sections(body: str) -> Tuple[str, OrderedDictType[str, List[str]]]:
     title = "Untitled"

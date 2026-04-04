@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
 from common import copy_fixture_pdf, make_temp_repo, sample_save_decision
-from knowledge_graph import SourceBinding
+from knowledge_graph import SourceBinding, ValidationError
 
 
 class SourceFamiliesTest(unittest.TestCase):
@@ -23,18 +27,21 @@ class SourceFamiliesTest(unittest.TestCase):
                 source_id="research.pdf.lesson-onboarding",
                 local_path=pdf_path,
                 source_kind="pdf_research",
+                source_family="pdf",
                 timestamp="2026-04-01T09:00:00+00:00",
             ),
             SourceBinding(
                 source_id="image.lesson.diagram",
                 local_path=image_path,
                 source_kind="image_asset",
+                source_family="images",
                 timestamp="2026-04-02T08:00:00+00:00",
             ),
             SourceBinding(
                 source_id="hermes.runtime.event",
                 local_path=hermes_path,
                 source_kind="hermes_runtime_artifact",
+                source_family="hermes",
                 authority_tier="raw_runtime",
                 timestamp="2026-04-03T07:00:00+00:00",
             ),
@@ -89,8 +96,8 @@ class SourceFamiliesTest(unittest.TestCase):
             source_id="runtime.secret.pointer",
             local_path=secret_path,
             source_kind="pdf_secret",
+            source_family="pdf",
             sensitivity="secret_pointer_only",
-            preserve_mode="pointer",
             timestamp="2026-04-03T06:00:00+00:00",
         )
         decision = sample_save_decision(
@@ -120,6 +127,70 @@ class SourceFamiliesTest(unittest.TestCase):
         self.assertFalse(manifest["render_eligibility"])
         self.assertEqual(manifest["render_omission_reason"], "disallowed_by_sensitivity")
         self.assertEqual(manifest["source_observed_at"], "2026-04-03T06:00:00+00:00")
+
+    def test_runtime_requires_explicit_source_family_and_repairs_it_with_named_script(self) -> None:
+        temp_dir, root, repo = make_temp_repo()
+        self.addCleanup(temp_dir.cleanup)
+
+        source_path = root / "source-family.md"
+        source_path.write_text("Explicit source family is required.\n")
+        binding = SourceBinding(
+            source_id="note.source.family",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="knowledge-system/source-family-contract",
+            candidate_title="Source Family Contract",
+            recommended_scope=["knowledge-system"],
+        )
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        manifest_path = next((repo.data_root / "sources" / "other").glob("*.record.json"))
+        manifest = json.loads(manifest_path.read_text())
+        manifest.pop("source_family", None)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        relative_source_record = manifest_path.relative_to(repo.data_root).as_posix()
+
+        with self.assertRaises(ValidationError):
+            repo.status()
+
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{repo_root / 'src'}:{repo_root / 'tests'}"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "backfill_source_family.py"),
+                "--json",
+                "--install-manifest-path",
+                str(repo.install_manifest_path),
+                "--repo-root",
+                str(root),
+                "--source-record",
+                relative_source_record,
+                "--source-family",
+                "other",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=repo_root,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["result"], "repaired")
+        self.assertEqual(payload["updated_source_records"], [relative_source_record])
+
+        repaired_manifest = json.loads(manifest_path.read_text())
+        self.assertEqual(repaired_manifest["source_family"], "other")
+        status = repo.status()
+        self.assertEqual(status["topic_count"], 1)
 
 
 if __name__ == "__main__":

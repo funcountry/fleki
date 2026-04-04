@@ -12,7 +12,7 @@ def calculate_export_digest(snapshot: ExportSnapshot) -> str:
     for export_file in snapshot.files:
         hasher.update(export_file.relative_path.encode("utf-8"))
         hasher.update(b"\0")
-        hasher.update(export_file.text.encode("utf-8"))
+        hasher.update(export_file.content)
         hasher.update(b"\0")
     return hasher.hexdigest()
 

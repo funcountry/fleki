@@ -3,8 +3,8 @@
 ## Good examples
 
 - Save a Codex session into `doctrine/shared-agent-learnings` and `operations/releases/post-release-followup-runbooks`.
-- Search for Slack-first lesson authoring and return the best-supported playbook plus supporting provenance.
-- Trace a runtime recovery claim back to the exact knowledge page, provenance note, and source record.
+- Search for Slack-first lesson authoring, return the candidate rows, and follow the returned `trace_ref`.
+- Trace a runtime recovery ref back to the exact knowledge page, provenance note, and source record.
 
 ## Anti-example
 
@@ -23,4 +23,4 @@
 - provenance coverage for every source
 - honest reading limits
 - exact helper approval or no helper use
-- authority notes when they change ranking or confidence
+- authority notes when they change confidence or interpretation

@@ -38,6 +38,8 @@
 - `skills/knowledge/**` is the human-edited source for the knowledge skill.
 - `skills/knowledge/runtime/**` is generated. Refresh it with:
   - `.venv/bin/python scripts/sync_knowledge_runtime.py`
+- The live graph root is the runtime `resolved_data_root`, normally `$HOME/.fleki/knowledge`.
+- The checked-in `knowledge/**` tree is reference content and a migration seed. It is not the live mutable graph.
 - Use the repository contract or the `knowledge` skill for work on `knowledge/**`; do not hand-edit graph outputs unless the task is explicitly about those generated artifacts.
 - Keep one owner per rule, workflow, or implementation. Do not leave competing copies in old docs, duplicate files, or parallel paths.
 
@@ -46,6 +48,9 @@
 - When a path is replaced, delete or rewrite the old path in the same change.
 - Do not keep both old and new implementations "just in case."
 - Do not hand-edit generated mirrors when the change belongs in the source path.
+- Do not add tokenization, fuzzy matching, lexical scoring, vector retrieval, or best-guess routing to make the app infer what the user meant.
+- Do not build helper harnesses or sidecar retrieval machinery when an agent can inspect candidate pages, provenance notes, source records, or local files directly.
+- `knowledge search` may list exact or literal candidates. `knowledge trace` must follow exact refs. The agent does the meaning-making.
 
 ## Install
 - Repo installer:

@@ -18,6 +18,8 @@ class RebuildTest(unittest.TestCase):
             source_id="codex.session.slack-first",
             local_path=source_path,
             source_kind="codex_session",
+            source_family="codex",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
@@ -48,7 +50,7 @@ class RebuildTest(unittest.TestCase):
         self.assertTrue(new_page.exists())
         self.assertFalse(old_page.exists())
 
-        search = repo.search("slack first authoring")
+        search = repo.search("product/lessons/slack-first-authoring")
         self.assertEqual(
             search["results"][0]["current_path"],
             "product/lessons/slack-first-lesson-authoring",
@@ -69,6 +71,8 @@ class RebuildTest(unittest.TestCase):
             source_id="codex.session.stale-note",
             local_path=source_path,
             source_kind="codex_session",
+            source_family="codex",
+            timestamp="2026-04-03T12:00:00+00:00",
         )
         decision = sample_save_decision(
             source_ids=[binding.source_id],
