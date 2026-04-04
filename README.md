@@ -61,16 +61,20 @@ Install the optional local review wiki on this machine:
 ./install.sh --review-wiki
 ```
 
-That installs the normal Fleki runtime pieces, then installs a per-user review
-wiki service on macOS or Linux. The site serves locally at:
+That installs the normal Fleki runtime pieces, then installs the Quartz-based
+review wiki as a per-user service on macOS or Linux. Use the same command again
+later if you want to refresh the installed review wiki from this checkout. The
+site serves locally at:
 
 ```text
 http://127.0.0.1:4151
 ```
 
-The review wiki exports only `topics/**`, `topics/indexes/**`, and
-`provenance/**` into derived state under `~/.fleki/state/review-wiki`. It does
-not publish `sources/**`, `receipts/**`, or raw record JSON.
+The review wiki renders the knowledge first, then renders preserved artifacts
+inline under each topic or provenance page when possible, and keeps provenance
+links below that. It exports only derived review content under
+`~/.fleki/state/review-wiki`. It does not point Quartz at the raw live graph
+directory.
 
 Remove the review wiki later with:
 
@@ -97,6 +101,16 @@ Look for these fields in the output:
 The review wiki is a local read-only view of the live knowledge graph. It does
 not become a second source of truth, and Quartz does not read the raw graph
 directory directly.
+
+Quick start for the Quartz review site:
+
+1. Install Fleki normally with `./install.sh`.
+2. Install the review wiki with `./install.sh --review-wiki`.
+3. Open `http://127.0.0.1:4151`.
+
+If the service is already installed and you pulled new review-wiki code, run
+`./install.sh --review-wiki` again from this checkout to refresh the installed
+Quartz workspace and service files.
 
 What the installer sets up:
 
@@ -129,8 +143,14 @@ Current derived state tree:
 
 How it works:
 
-- Fleki exports only `topics/**`, `topics/indexes/**`, and `provenance/**`
+- Fleki exports `topics/**`, `topics/indexes/**`, and `provenance/**`
   into the derived Quartz `content/` tree
+- topic pages and provenance pages keep the knowledge first, then render
+  artifact evidence inline below it, then keep provenance links below that
+- preserved artifacts render inline when that makes sense, and pointer-backed
+  sources stay as metadata plus links
+- Fleki keeps artifact detail pages as fallback targets and exports only the
+  specific copied files those pages embed or link
 - Fleki computes an export digest and skips rebuilds when the exported content
   did not change
 - the daemon polls every 5 seconds
@@ -141,10 +161,18 @@ How it works:
 What it does not do:
 
 - it does not point Quartz at `$HOME/.fleki/knowledge`
-- it does not publish `sources/**`, `receipts/**`, or `.record.json`
-- it does not export raw PDFs, render assets, or other copied source files
+- it does not publish the whole `sources/**` tree, `receipts/**`, or
+  `.record.json`
+- it exports only the copied artifacts and PDF render files that the generated
+  review pages actually reference
 - it does not use `quartz build --serve` as the installed long-running service
 - it does not use a separate review-wiki config file in v1
+
+Useful machine-level checks:
+
+- `curl -I http://127.0.0.1:4151`
+- macOS: `launchctl print gui/$(id -u)/dev.fleki.review-wiki`
+- Linux: `systemctl --user status fleki-review-wiki`
 
 If you want to expose the review wiki through another local reverse proxy or a
 tailnet-only Tailscale route, point that layer at:

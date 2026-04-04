@@ -4,9 +4,10 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from common import ROOT
+from common import ROOT, sample_save_decision
 from knowledge_graph import (
     KnowledgeRepository,
+    SourceBinding,
     ValidationError,
     build_install_manifest,
     default_config_root,
@@ -265,7 +266,7 @@ class LayoutContractTest(unittest.TestCase):
         )
         write_install_manifest(old_manifest)
         (old_layout.data_root / "topics" / "indexes").mkdir(parents=True, exist_ok=True)
-        (old_layout.data_root / "topics" / "indexes" / "README.md").write_text("# Indexes\n")
+        (old_layout.data_root / "topics" / "indexes" / "seed.txt").write_text("indexes\n")
         (old_layout.state_root / "receipts").mkdir(parents=True, exist_ok=True)
         (old_layout.state_root / "receipts" / "migration.txt").write_text("ok\n")
 
@@ -274,11 +275,55 @@ class LayoutContractTest(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["kind"], "legacy_install")
         new_layout = resolve_knowledge_layout(home=home, repo_root=repo_root)
-        self.assertTrue((new_layout.data_root / "topics" / "indexes" / "README.md").exists())
+        self.assertTrue((new_layout.data_root / "topics" / "indexes" / "seed.txt").exists())
         self.assertTrue((new_layout.state_root / "receipts" / "migration.txt").exists())
         self.assertFalse((home / ".config" / "fleki").exists())
         self.assertFalse((home / ".local" / "state" / "fleki").exists())
         self.assertFalse((home / ".local" / "share" / "fleki" / "knowledge").exists())
+
+    def test_runtime_ignores_scaffold_readmes_in_provenance_and_receipts(self) -> None:
+        temp_dir = TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        layout = resolve_knowledge_layout(
+            data_root=root / "data-root",
+            config_root=root / "config-root",
+            state_root=root / "state-root",
+            install_manifest_path=root / "config-root" / "install.json",
+            repo_root=root,
+        )
+        repo = KnowledgeRepository(layout)
+        repo.initialize_layout()
+
+        (repo.provenance_root / "README.md").write_text("# Provenance\n")
+        (repo.receipts_root / "save" / "README.md").write_text("# Save Receipts\n")
+
+        source_path = root / "source.md"
+        source_path.write_text("Runtime should ignore scaffold markdown.\n")
+        binding = SourceBinding(
+            source_id="note.runtime.readme",
+            local_path=source_path,
+            source_kind="markdown_doc",
+            source_family="other",
+            timestamp="2026-04-03T12:00:00+00:00",
+        )
+        decision = sample_save_decision(
+            source_ids=[binding.source_id],
+            topic_path="product/runtime/readme-ignores",
+            candidate_title="Runtime Readme Ignores",
+            recommended_scope=["product/runtime"],
+        )
+        decision["topic_actions"][0]["knowledge_units"][0]["statement"] = (
+            "Scaffold markdown should not affect runtime behavior."
+        )
+
+        repo.apply_save(source_bindings=[binding], decision=decision)
+
+        search_payload = repo.search("Runtime Readme Ignores", write_receipt=False)
+        status_payload = repo.status(write_receipt=False)
+
+        self.assertEqual(search_payload["results"][0]["current_path"], "product/runtime/readme-ignores")
+        self.assertEqual(status_payload["resolved_data_root"], str(repo.data_root))
 
 
 if __name__ == "__main__":

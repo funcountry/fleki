@@ -77,21 +77,31 @@ class ReviewWikiExporterTest(unittest.TestCase):
         )
         self.assertIn("[Provenance for note.review.exporter]", topic_page)
         self.assertIn("## Artifacts", topic_page)
+        self.assertIn("### Artifact `note.review.exporter`", topic_page)
+        self.assertIn("Review exporter evidence.", topic_page)
         self.assertIn(
-            f"[note.review.exporter]({_artifact_page_href('topics/product/review/exporter-shape.md', 'note.review.exporter')})",
+            'note.review.exporter.pdf__snapshot-evidence.pdf" type="application/pdf"',
+            topic_page,
+        )
+        self.assertIn("### Artifact `note.review.exporter.secret`", topic_page)
+        self.assertIn("Raw copied content is not stored for `secret_pointer_only`.", topic_page)
+        self.assertIn(
+            f"[Artifact details]({_artifact_page_href('topics/product/review/exporter-shape.md', 'note.review.exporter')})",
             topic_page,
         )
 
-        provenance_page = next(
+        provenance_pages = [
             item.text
             for item in snapshot.files
             if item.relative_path.startswith("provenance/")
             and item.relative_path.endswith(".md")
             and item.relative_path != "provenance/index.md"
-        )
-        self.assertIn("## Connected Topics", provenance_page)
-        self.assertIn("[Exporter Shape]", provenance_page)
-        self.assertIn("## Artifacts", provenance_page)
+        ]
+        self.assertTrue(any("## Connected Topics" in page for page in provenance_pages))
+        self.assertTrue(any("[Exporter Shape]" in page for page in provenance_pages))
+        self.assertTrue(any("## Artifacts" in page for page in provenance_pages))
+        self.assertTrue(any("### Artifact `note.review.exporter`" in page for page in provenance_pages))
+        self.assertTrue(any("Review exporter evidence." in page for page in provenance_pages))
 
         by_topic_page = next(
             item.text for item in snapshot.files if item.relative_path == "indexes/by-topic.md"
@@ -137,6 +147,8 @@ class ReviewWikiExporterTest(unittest.TestCase):
 
         note_path = root / "artifact-note.md"
         note_path.write_text("Semantic evidence for the review wiki.\n")
+        image_path = root / "artifact-image.png"
+        image_path.write_bytes(b"\x89PNG\r\n\x1a\nmock")
         copied_pdf_path = copy_fixture_pdf(root, "copied-evidence.pdf")
         secret_pdf_path = copy_fixture_pdf(root, "secret-evidence.pdf")
 
@@ -147,6 +159,13 @@ class ReviewWikiExporterTest(unittest.TestCase):
                 source_kind="markdown_doc",
                 source_family="other",
                 timestamp="2026-04-03T12:00:00+00:00",
+            ),
+            SourceBinding(
+                source_id="note.review.image",
+                local_path=image_path,
+                source_kind="image_asset",
+                source_family="images",
+                timestamp="2026-04-03T12:15:00+00:00",
             ),
             SourceBinding(
                 source_id="note.review.pdf.copy",
@@ -186,33 +205,58 @@ class ReviewWikiExporterTest(unittest.TestCase):
         self.assertIn("## Artifacts", topic_text)
         self.assertIn("## Provenance Notes", topic_text)
         self.assertLess(topic_text.index("## Artifacts"), topic_text.index("## Provenance Notes"))
+        self.assertIn("### Artifact `note.review.article`", topic_text)
+        self.assertIn("Semantic evidence for the review wiki.", topic_text)
+        self.assertIn(
+            "![Artifact `note.review.image`](../../files/sources/images/note.review.image__artifact-image.png)",
+            topic_text,
+        )
+        self.assertIn(
+            '<object data="../../files/sources/pdf/note.review.pdf.copy__copied-evidence.pdf"',
+            topic_text,
+        )
+        self.assertIn("### Artifact `note.review.pdf.secret`", topic_text)
+        self.assertIn("Raw copied content is not stored for `secret_pointer_only`.", topic_text)
 
         note_artifact_page = f"artifacts/{safe_filename('note.review.article')}.md"
+        image_artifact_page = f"artifacts/{safe_filename('note.review.image')}.md"
         copied_pdf_artifact_page = f"artifacts/{safe_filename('note.review.pdf.copy')}.md"
         secret_pdf_artifact_page = f"artifacts/{safe_filename('note.review.pdf.secret')}.md"
         self.assertEqual(
             exported["artifact_pages_by_source"]["note.review.article"],
             note_artifact_page,
         )
+        self.assertEqual(
+            exported["artifact_pages_by_source"]["note.review.image"],
+            image_artifact_page,
+        )
         self.assertIn(
-            f"[note.review.article]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.article')})",
+            f"[Artifact details]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.article')})",
             topic_text,
         )
         self.assertIn(
-            f"[note.review.pdf.copy]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.pdf.copy')})",
+            f"[Artifact details]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.pdf.copy')})",
             topic_text,
         )
         self.assertIn(
-            f"[note.review.pdf.secret]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.pdf.secret')})",
+            f"[Artifact details]({_artifact_page_href('topics/knowledge-system/review-wiki-artifacts.md', 'note.review.pdf.secret')})",
             topic_text,
         )
 
         provenance_pages = [content_root / relative_path for relative_path in exported["provenance_pages"]]
-        self.assertEqual(len(provenance_pages), 3)
+        self.assertEqual(len(provenance_pages), 4)
         self.assertTrue(
             any(
                 "## Artifacts" in provenance_page.read_text()
-                and "[note.review.article]" in provenance_page.read_text()
+                and "### Artifact `note.review.article`" in provenance_page.read_text()
+                and "Semantic evidence for the review wiki." in provenance_page.read_text()
+                for provenance_page in provenance_pages
+            )
+        )
+        self.assertTrue(
+            any(
+                "### Artifact `note.review.image`" in provenance_page.read_text()
+                and "note.review.image__artifact-image.png" in provenance_page.read_text()
                 for provenance_page in provenance_pages
             )
         )
@@ -242,6 +286,7 @@ class ReviewWikiExporterTest(unittest.TestCase):
 
         expected_exported_files = {
             "files/sources/other/note.review.article__artifact-note.md",
+            "files/sources/images/note.review.image__artifact-image.png",
             "files/sources/pdf/note.review.pdf.copy__copied-evidence.pdf",
             "files/sources/pdf/note.review.pdf.secret__secret-evidence.pdf.pointer.json",
         }

@@ -83,22 +83,6 @@ class KnowledgeRepository:
         ]:
             path.mkdir(parents=True, exist_ok=True)
 
-        knowledge_readme = self.knowledge_root / "README.md"
-        if not knowledge_readme.exists():
-            knowledge_readme.write_text(
-                "# Knowledge Tree\n\n"
-                "This directory is the canonical on-disk knowledge graph for Fleki.\n"
-                "Semantic pages live under `topics/`, provenance under `provenance/`, raw sources under `sources/`, and command receipts under `receipts/`.\n"
-            )
-
-        search_readme = self.search_root / "README.md"
-        if not search_readme.exists():
-            search_readme.write_text(
-                "# Optional Search Support State\n\n"
-                "This directory is reserved for approval-gated support state only.\n"
-                "The default architecture must remain truthful and useful without anything new appearing here.\n"
-            )
-
     def apply_save(
         self,
         *,
@@ -1104,6 +1088,8 @@ class KnowledgeRepository:
         if not self.provenance_root.exists():
             return items
         for path in self.provenance_root.rglob("*.md"):
+            if path.name == "README.md":
+                continue
             metadata, body = split_frontmatter(path.read_text())
             provenance_id = metadata.get("provenance_id")
             if not provenance_id:
@@ -1122,6 +1108,8 @@ class KnowledgeRepository:
         if not receipt_dir.exists():
             return items
         for path in receipt_dir.rglob("*.md"):
+            if path.name == "README.md":
+                continue
             metadata, body = split_frontmatter(path.read_text())
             items.append({"path": path, "metadata": metadata, "body": body})
         return items

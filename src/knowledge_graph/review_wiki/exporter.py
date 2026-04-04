@@ -16,6 +16,24 @@ from .layout import resolve_review_wiki_layout
 
 GRAPH_REF_RE = re.compile(r"`([^`\n]+?\.md)`")
 CODE_SPAN_RE = re.compile(r"`([^`\n]+)`")
+MARKDOWN_INLINE_EXTENSIONS = {".md", ".markdown"}
+IMAGE_INLINE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+TEXT_INLINE_EXTENSIONS = {
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".csv",
+    ".tsv",
+    ".xml",
+    ".html",
+    ".js",
+    ".ts",
+    ".py",
+    ".sh",
+    ".sql",
+}
 
 
 @dataclass(frozen=True)
@@ -318,7 +336,9 @@ def _render_export_page(
         source_ids = _source_ids_for_topic(repository, page, provenance_map, artifact_summaries)
         body = _inject_artifact_section(
             body,
+            repository=repository,
             source_ids=source_ids,
+            artifact_summaries=artifact_summaries,
             artifact_pages=artifact_pages,
             page_relative_path=PurePosixPath(page.export_relative_path),
             keep_provenance_last=True,
@@ -331,7 +351,9 @@ def _render_export_page(
         ]
         body = _inject_artifact_section(
             body,
+            repository=repository,
             source_ids=source_ids,
+            artifact_summaries=artifact_summaries,
             artifact_pages=artifact_pages,
             page_relative_path=PurePosixPath(page.export_relative_path),
             keep_provenance_last=False,
@@ -502,7 +524,9 @@ def _topic_path_replacement(
 def _inject_artifact_section(
     body: str,
     *,
+    repository: KnowledgeRepository,
     source_ids: Iterable[str],
+    artifact_summaries: Mapping[str, Mapping[str, Any]],
     artifact_pages: Mapping[str, PurePosixPath],
     page_relative_path: PurePosixPath,
     keep_provenance_last: bool,
@@ -521,7 +545,9 @@ def _inject_artifact_section(
         lines.append("")
 
     artifact_lines = _artifact_section_lines(
+        repository=repository,
         source_ids=source_ids,
+        artifact_summaries=artifact_summaries,
         artifact_pages=artifact_pages,
         page_relative_path=page_relative_path,
     )
@@ -540,18 +566,29 @@ def _inject_artifact_section(
 
 def _artifact_section_lines(
     *,
+    repository: KnowledgeRepository,
     source_ids: Iterable[str],
+    artifact_summaries: Mapping[str, Mapping[str, Any]],
     artifact_pages: Mapping[str, PurePosixPath],
     page_relative_path: PurePosixPath,
 ) -> list[str]:
     lines: list[str] = []
     for source_id in source_ids:
+        artifact = artifact_summaries.get(source_id)
         artifact_relative_path = artifact_pages.get(source_id)
-        if artifact_relative_path is None:
+        if artifact is None or artifact_relative_path is None:
             continue
-        lines.append(
-            f"- [{source_id}]({_relative_page_href(page_relative_path, artifact_relative_path)})"
+        lines.extend(
+            _render_inline_artifact_lines(
+                repository=repository,
+                artifact=artifact,
+                artifact_relative_path=artifact_relative_path,
+                page_relative_path=page_relative_path,
+            )
         )
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -708,6 +745,154 @@ def _render_link_lines(
     if contract_gap:
         lines.append(f"- Render contract gap: `{contract_gap}`")
     return lines
+
+
+def _render_inline_artifact_lines(
+    *,
+    repository: KnowledgeRepository,
+    artifact: Mapping[str, Any],
+    artifact_relative_path: PurePosixPath,
+    page_relative_path: PurePosixPath,
+) -> list[str]:
+    source_id = str(artifact["source_id"])
+    primary_artifact_path = PurePosixPath("files") / str(artifact["primary_artifact_path"])
+    open_href = _relative_file_href(page_relative_path, primary_artifact_path)
+    details_href = _relative_page_href(page_relative_path, artifact_relative_path)
+    lines = [
+        f"### Artifact `{source_id}`",
+        "",
+        f"[Open preserved artifact]({open_href}) | [Artifact details]({details_href})",
+        "",
+    ]
+
+    if artifact["primary_artifact_kind"] == "pointer_record":
+        lines.extend(
+            [
+                f"- Source family: `{artifact['source_family']}`",
+                f"- Source kind: `{artifact['source_kind']}`",
+                f"- Storage mode: `{artifact['storage_mode']}`",
+                "- Raw copied content is not stored for `secret_pointer_only`.",
+            ]
+        )
+        omission_reason = artifact.get("render_omission_reason")
+        if omission_reason:
+            lines.append(f"- Render omitted: `{omission_reason}`")
+        contract_gap = artifact.get("render_contract_gap")
+        if contract_gap:
+            lines.append(f"- Render contract gap: `{contract_gap}`")
+        return lines
+
+    primary_relative_path = str(artifact["primary_artifact_path"])
+    if _is_pdf_artifact(primary_relative_path):
+        lines.extend(_render_inline_pdf(primary_artifact_path=open_href))
+        return lines
+
+    if _is_image_artifact(primary_relative_path):
+        lines.append(f"![Artifact `{source_id}`]({open_href})")
+        return lines
+
+    if _is_markdown_artifact(primary_relative_path):
+        lines.extend(
+            _render_inline_markdown_artifact(
+                repository=repository,
+                primary_artifact_path=primary_relative_path,
+            )
+        )
+        return lines
+
+    if _is_text_artifact(primary_relative_path):
+        lines.extend(
+            _render_inline_text_artifact(
+                repository=repository,
+                primary_artifact_path=primary_relative_path,
+            )
+        )
+        return lines
+
+    lines.extend(
+        [
+            f"- Source family: `{artifact['source_family']}`",
+            f"- Source kind: `{artifact['source_kind']}`",
+            f"- Storage mode: `{artifact['storage_mode']}`",
+            "- This binary artifact is available through the open link above.",
+        ]
+    )
+    return lines
+
+
+def _render_inline_pdf(*, primary_artifact_path: str) -> list[str]:
+    return [
+        '<div class="artifact-inline artifact-inline--pdf">',
+        f'  <object data="{primary_artifact_path}" type="application/pdf" width="100%" height="720">',
+        f'    <a href="{primary_artifact_path}">Open preserved artifact</a>',
+        "  </object>",
+        "</div>",
+    ]
+
+
+def _render_inline_markdown_artifact(
+    *,
+    repository: KnowledgeRepository,
+    primary_artifact_path: str,
+) -> list[str]:
+    source_path = repository.data_root / primary_artifact_path
+    text = source_path.read_text(errors="replace")
+    if text.startswith("---\n"):
+        _, body = split_frontmatter(text)
+    else:
+        body = text
+    body = body.rstrip()
+    if not body:
+        return ["_Artifact body is empty._"]
+    return body.splitlines()
+
+
+def _render_inline_text_artifact(
+    *,
+    repository: KnowledgeRepository,
+    primary_artifact_path: str,
+) -> list[str]:
+    source_path = repository.data_root / primary_artifact_path
+    body = source_path.read_text(errors="replace").rstrip()
+    language = _code_fence_language(Path(primary_artifact_path).suffix)
+    lines = [f"```{language}"]
+    if body:
+        lines.extend(body.splitlines())
+    lines.append("```")
+    return lines
+
+def _is_markdown_artifact(graph_relative_path: str) -> bool:
+    return Path(graph_relative_path).suffix.lower() in MARKDOWN_INLINE_EXTENSIONS
+
+
+def _is_image_artifact(graph_relative_path: str) -> bool:
+    return Path(graph_relative_path).suffix.lower() in IMAGE_INLINE_EXTENSIONS
+
+
+def _is_pdf_artifact(graph_relative_path: str) -> bool:
+    return Path(graph_relative_path).suffix.lower() == ".pdf"
+
+
+def _is_text_artifact(graph_relative_path: str) -> bool:
+    return Path(graph_relative_path).suffix.lower() in TEXT_INLINE_EXTENSIONS
+
+
+def _code_fence_language(suffix: str) -> str:
+    return {
+        ".json": "json",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".toml": "toml",
+        ".csv": "text",
+        ".tsv": "text",
+        ".xml": "xml",
+        ".html": "html",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".py": "python",
+        ".sh": "bash",
+        ".sql": "sql",
+    }.get(suffix.lower(), "text")
 
 
 def _build_artifact_files(
