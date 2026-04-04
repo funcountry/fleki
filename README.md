@@ -12,6 +12,10 @@ It gives you a `knowledge` CLI plus packaged skill installs for Codex, Hermes, a
 - Keep the graph inspectable on disk under a normal directory tree.
 - Use one install flow to provision the CLI and the runtime-specific skill bundles.
 
+## License
+
+Fleki is released under the [MIT License](LICENSE).
+
 ## What it does
 
 The `knowledge` CLI supports five core workflows:
@@ -277,6 +281,11 @@ Copied PDFs also persist a source-adjacent render bundle:
 
 - `.render.md`
 - `.render.manifest.json`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, verification
+commands, and runtime sync rules.
 - optional `.assets/`
 
 If an older PDF source record predates that render contract, `knowledge trace` surfaces the gap and `knowledge status` reports it through `pdf_render_contract_gap_count`.

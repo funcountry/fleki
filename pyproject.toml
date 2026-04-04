@@ -7,11 +7,24 @@ name = "fleki-knowledge-graph"
 version = "0.1.0"
 description = "Shared semantic knowledge graph runtime for Fleki"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.12"
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
+keywords = ["knowledge-graph", "agents", "cli", "quartz"]
 dependencies = [
   "docling>=2.69,<3",
   "PyYAML>=6,<7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/funcountry/fleki"
+Repository = "https://github.com/funcountry/fleki"
+Issues = "https://github.com/funcountry/fleki/issues"
 
 [project.scripts]
 knowledge = "knowledge_graph.cli:main"
