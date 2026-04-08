@@ -21,11 +21,18 @@ class ReviewWikiDaemonTest(unittest.TestCase):
         nested = public_root / "topics" / "example" / "index.html"
         nested.parent.mkdir(parents=True, exist_ok=True)
         nested.write_text("topic\n")
+        dotted = public_root / "artifacts" / "artifact.example.pdf.html"
+        dotted.parent.mkdir(parents=True, exist_ok=True)
+        dotted.write_text("artifact\n")
         asset = public_root / "index.css"
         asset.write_text("body{}\n")
 
         self.assertEqual(_resolve_public_path(public_root, "/"), (public_root / "index.html").resolve())
         self.assertEqual(_resolve_public_path(public_root, "/topics/example"), nested.resolve())
+        self.assertEqual(
+            _resolve_public_path(public_root, "/artifacts/artifact.example.pdf"),
+            dotted.resolve(),
+        )
         self.assertEqual(_resolve_public_path(public_root, "/index.css"), asset.resolve())
 
     def test_resolve_public_path_rejects_path_traversal(self) -> None:

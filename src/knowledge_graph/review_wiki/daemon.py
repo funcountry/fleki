@@ -233,10 +233,11 @@ def _resolve_public_path(public_root: Path, request_target: str) -> Path | None:
         return index_path if index_path.exists() else None
     if candidate.exists():
         return candidate
+    html_candidate = candidate.with_suffix(".html") if not candidate.suffix else candidate.parent / f"{candidate.name}.html"
+    if html_candidate.exists() and html_candidate.is_relative_to(resolved_public_root):
+        return html_candidate
     if not candidate.suffix:
         html_candidate = candidate.with_suffix(".html")
-        if html_candidate.exists() and html_candidate.is_relative_to(resolved_public_root):
-            return html_candidate
         nested_index = candidate / "index.html"
         if nested_index.exists() and nested_index.is_relative_to(resolved_public_root):
             return nested_index
