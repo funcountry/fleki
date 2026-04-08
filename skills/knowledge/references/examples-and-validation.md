@@ -3,12 +3,15 @@
 ## Good examples
 
 - Save a Codex session into `doctrine/shared-agent-learnings` and `operations/releases/post-release-followup-runbooks`.
+- Save a fresh agent-authored report into the nearest existing topic instead of leaving it as a local artifact only.
+- Save a local markdown artifact with its real shell mtime, or with a date-only ISO 8601 timestamp when the artifact only exposes a source date.
 - Search for Slack-first lesson authoring, return the candidate rows, and follow the returned `trace_ref`.
 - Trace a runtime recovery ref back to the exact knowledge page, provenance note, and source record.
 
 ## Anti-example
 
 - Create `topics/codex/2026-02-27-common-place-for-agents.md` and dump raw chronology into it.
+- Leave a durable report in `artifacts/` without filing its reusable takeaways into the graph.
 
 ## Validation matrix
 

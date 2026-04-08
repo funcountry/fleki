@@ -8,19 +8,38 @@ metadata:
 
 # Knowledge
 
-Use this skill when the shared company knowledge graph is the right interface, either as the destination for new source material or as the navigation surface for existing knowledge.
+Use this skill as the default interface for shared company memory.
 
-This skill is about semantic knowledge with provenance, not artifact filing, generic search, or ad hoc note dumping.
+When the user is asking what Poker Skill already knows, already decided, already learned, or where a belief came from, start here before reconstructing the answer from session history or raw files.
+
+The knowledge base is a persistent, provenance-backed company memory. It is not a generic file search, an ad hoc notes folder, or a replacement for fresh telemetry when the job is to measure what is live now.
+
+When the agent creates or receives a durable report, packet, action plan, truth doc, or similar artifact, default to filing its reusable takeaways here instead of leaving them stranded in local artifacts.
 
 Assume the agent is local, the skill is local, and the source files are local. Direct filesystem inspection and native multimodal reasoning are the default operating model.
 
-## When to use
+## When This Skill Activates
 
-- The user wants to save sessions, docs, PDFs, images, notes, or other source material into the shared semantic knowledge graph.
-- The work depends on company-specific knowledge and should search existing topic pages instead of relying on memory or raw file spelunking.
+- The user asks what the company already knows about a topic, issue, experiment, policy, workflow, lesson, design rule, or product decision.
+- The user asks what previous research, telemetry packets, or earlier work already concluded.
 - The user asks where a belief, workflow, policy, lesson, design rule, or product decision came from.
+- The user wants to save sessions, docs, PDFs, images, notes, or other source material into the shared semantic knowledge graph.
+- The agent just produced a durable artifact that another agent would reasonably want to reuse.
 - The graph may need a scoped rebuild because a topic cluster, backlinks, or indexes are stale after meaningful new ingestion.
 - The user asks about graph freshness, queue state, coverage, or ingestion health.
+
+## Resuming Existing Knowledge
+
+When the question depends on prior company knowledge, orient yourself in the shared graph before doing anything else:
+
+1. If freshness, backlog, or coverage might matter, run `knowledge status --json --no-receipt`; otherwise skip straight to retrieval.
+2. The first retrieval move for remembered-understanding questions is `knowledge search`, not `session_search` and not `knowledge status` by itself.
+3. Start with `knowledge search` using the smallest likely literal topic path, alias, heading, or exact term.
+4. Read the returned topic page and follow `trace_ref` into `knowledge trace` before presenting any non-trivial provenance-backed claim.
+5. If `knowledge search` misses, look for the local artifact or report file before you use `session_search`.
+6. If a durable local artifact answers the question, use that artifact and then save it into `knowledge` before you finish.
+7. Fall back to `session_search`, Slack memory, or raw artifact spelunking only after a good-faith `knowledge search` miss or when the graph clearly lacks support.
+8. If the turn creates durable new evidence, finish by saving or rebuilding the smallest affected topic set.
 
 ## When not to use
 
@@ -56,21 +75,33 @@ Assume the agent is local, the skill is local, and the source files are local. D
 
 ## First move
 
-1. Classify the job as `save`, `search`, `trace`, `rebuild`, or `status`.
-2. Restate the user need in semantic terms rather than source-system terms.
-3. Identify the minimum scope needed.
-4. Load only the references needed for that command.
-5. Return cited results, an explicit ingestion decision, or a clear gap.
+1. Decide whether the user is asking for remembered company knowledge, provenance, ingestion, rebuild, or graph status.
+2. If the job is retrieval, default to `knowledge search` rather than `session_search`, `knowledge status` by itself, or raw file exploration.
+3. If the job is ingestion, inspect the local source directly and use `knowledge search` plus `knowledge trace` to find the nearest existing semantic home before deciding whether to update or create.
+4. Restate the user need in semantic terms and identify the minimum topic scope.
+5. Classify the command as `save`, `search`, `trace`, `rebuild`, or `status`.
+6. Return cited results, an explicit ingestion decision, or a clear gap.
 
 ## Workflow
 
 ### `knowledge save`
 
 - Treat inputs as source material, not as filing destinations.
+- Treat durable reports, packets, action plans, runbooks, and agent-authored artifacts as normal `knowledge save` inputs when they carry reusable company evidence.
+- If the current turn created a durable artifact that another agent would not want to rediscover, default to saving it.
+- Once the current turn already produced the durable artifact it needs, file it before opening a discretionary refinement or code-change loop. Do not start rewriting the generator, report script, or surrounding tooling unless the user explicitly asked for that change.
+- Start by inspecting the local source directly.
+- Before drafting the save decision, run `knowledge search` and `knowledge trace` for the nearest existing topic.
+- Prefer updating the smallest existing semantic home over creating a duplicate chronology page.
+- A good semantic home is enough. If no clear existing page is obvious, create the clearest topic and save instead of leaving the artifact local while you keep searching.
+- Distill the takeaways yourself in normal automated contexts; do not wait for a separate human discussion step unless the user explicitly wants that collaboration.
 - `knowledge save` is apply-only. There is no preview, validate-only, or dry-run save path.
+- The CLI invocation shape is `knowledge save --bindings <bindings.json> --decision <decision.json> --json`.
+- Build those temp JSON files from the real shell so `local_path` points at the actual artifact, not a sandbox copy.
 - Each binding must declare `source_family`. Do not infer family from `source_kind` or file suffixes.
 - Each binding must declare `timestamp` as ISO 8601 source-observed time.
-- If source-observed time is unknown, stop and say that plainly instead of inventing one.
+- For a local artifact, use the real file mtime from the shell when that is the best source-observed time you have.
+- If all you have is the source date, use that ISO 8601 date and note the date-only precision in `confidence_notes`. Do not skip the save over missing time-of-day detail.
 - Inspect the local source files directly before making semantic decisions.
 - Preserve the source in Fleki-owned storage first and record honest reading limits before filing knowledge.
 - Callers do not choose copy vs pointer mode. Fleki copies non-secret sources and preserves pointer-backed artifacts only for `secret_pointer_only`.
@@ -80,11 +111,14 @@ Assume the agent is local, the skill is local, and the source files are local. D
 - Apply bounded synchronous changes to the smallest affected page sections and queue wider reorganization for `rebuild` when needed.
 - Use `fact` for plain observations unless another kind adds stronger semantic meaning.
 - Keep `ingest_summary.authority_tier` separate from `knowledge_units[].authority_posture`. `historical_support` is a tier, not a posture.
+- Use the most honest authority label that matches the artifact you actually read. Do not keep searching for a stronger label before you save.
+- After `knowledge save`, report exactly what changed: topic path, source record, provenance note, and any queued rebuild scope.
 - Follow `references/save-ingestion.md` for the full ingestion decision contract.
 
 ### `knowledge search`
 
 - Search exact ids, current paths, page aliases, and literal page text.
+- When the user asks what the company already knows, this is the default entrypoint.
 - Keep search expectations literal. Rewrite the query around exact page text, paths, aliases, or headings instead of expecting semantic paraphrase rescue.
 - Return zero results on a miss instead of a nearest-looking false positive.
 - Prefer existing knowledge pages over raw source artifacts.
